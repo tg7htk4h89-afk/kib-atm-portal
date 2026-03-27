@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KIB ATM/ITM Operations Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'IBM Plex Sans', sans-serif;
+      background: #0a1628;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .logo-block {
+      text-align: center;
+    }
+    .logo-block .brand {
+      font-size: 28px;
+      font-weight: 700;
+      color: #c9a227;
+      letter-spacing: 2px;
+    }
+    .logo-block .sub {
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(201,162,39,0.2);
+      border-top-color: #c9a227;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status {
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="logo-block">
+    <div class="brand">KIB</div>
+    <div class="sub">ATM / ITM Operations Portal</div>
+  </div>
+  <div class="spinner"></div>
+  <div class="status" id="statusText">Checking session…</div>
+
+  <script>
+    // Check existing session and redirect appropriately
+    (function () {
+      const SESSION_KEY = 'atm_portal_session';
+      const raw = sessionStorage.getItem(SESSION_KEY);
+
+      if (!raw) {
+        document.getElementById('statusText').textContent = 'Redirecting to login…';
+        setTimeout(() => { window.location.href = 'login.html'; }, 600);
+        return;
+      }
+
+      try {
+        const session = JSON.parse(raw);
+        const now = Date.now();
+        const EIGHT_HOURS = 8 * 60 * 60 * 1000;
+
+        if (!session.token || !session.loginTime || (now - session.loginTime) > EIGHT_HOURS) {
+          sessionStorage.removeItem(SESSION_KEY);
+          window.location.href = 'login.html?reason=expired';
+          return;
+        }
+
+        document.getElementById('statusText').textContent = 'Session found. Redirecting…';
+
+        const roleMap = {
+          branch_user: 'branch.html',
+          manager:     'manager.html',
+          vendor:      'vendor.html'
+        };
+        const dest = roleMap[session.role] || 'login.html';
+        setTimeout(() => { window.location.href = dest; }, 400);
+
+      } catch (e) {
+        sessionStorage.removeItem(SESSION_KEY);
+        window.location.href = 'login.html';
+      }
+    })();
+  </script>
+</body>
+</html>

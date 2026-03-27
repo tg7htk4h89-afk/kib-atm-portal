@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATM/ITM Portal — Branch Checklist</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/forms.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-title">🏧 ATM/ITM Portal</div>
+        <div class="logo-sub">Branch Operations</div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">Checklist</div>
+        <a href="branch.html" class="nav-item active">
+          <span class="nav-icon">📋</span> Daily Checklist
+        </a>
+        <div class="nav-section">History</div>
+        <a href="branch.html?view=history" class="nav-item">
+          <span class="nav-icon">🕐</span> My Submissions
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="nav-user"></div>
+        <button id="logout-btn">Sign Out</button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main-content">
+      <div class="page-header">
+        <h1>Daily Machine Checklist</h1>
+        <div class="page-meta" id="current-date-time"></div>
+      </div>
+
+      <div class="page-body">
+
+        <!-- Step 1: Machine Selection -->
+        <div class="machine-selector-card" id="machine-selector">
+          <h2>Select Machine to Inspect</h2>
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label required">Branch</label>
+              <select class="form-control" id="branch-select" onchange="onBranchChange()">
+                <option value="">— Select Branch —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label required">ATM / ITM Machine</label>
+              <select class="form-control" id="machine-select" onchange="onMachineChange()" disabled>
+                <option value="">— Select Machine —</option>
+              </select>
+            </div>
+          </div>
+          <div id="machine-info-strip" class="machine-info-strip hidden">
+            <div class="machine-info-item">
+              <span class="machine-info-label">Terminal ID</span>
+              <span class="machine-info-value" id="info-terminal-id">—</span>
+            </div>
+            <div class="machine-info-item">
+              <span class="machine-info-label">Type</span>
+              <span class="machine-info-value" id="info-machine-type">—</span>
+            </div>
+            <div class="machine-info-item">
+              <span class="machine-info-label">Location</span>
+              <span class="machine-info-value" id="info-location">—</span>
+            </div>
+            <div class="machine-info-item">
+              <span class="machine-info-label">Last Tested</span>
+              <span class="machine-info-value" id="info-last-tested">—</span>
+            </div>
+            <div class="machine-info-item">
+              <span class="machine-info-label">Current Status</span>
+              <span id="info-status">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submission success -->
+        <div class="alert alert-success hidden" id="success-alert">
+          <strong>✓ Checklist submitted successfully.</strong>&nbsp;
+          <span id="success-detail"></span>
+          <a href="#" onclick="resetForm(); return false;" style="margin-left:12px; color: var(--status-green); font-weight:600;">Submit another →</a>
+        </div>
+
+        <!-- Checklist Form -->
+        <div id="checklist-form-wrap" class="hidden">
+
+          <!-- Time to check -->
+          <div class="card mb-5">
+            <div class="card-body">
+              <div class="grid-2">
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label required">Time of Inspection</label>
+                  <input type="time" class="form-control" id="inspection-time" />
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">Inspector Name</label>
+                  <input type="text" class="form-control" id="inspector-name" placeholder="Your full name" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Checklist sections rendered by JS -->
+          <div id="checklist-sections"></div>
+
+          <!-- General Comments & Image Upload -->
+          <div class="card mb-5">
+            <div class="card-header">
+              <div class="card-title">📎 Additional Information</div>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">General Comments</label>
+                <textarea class="form-control" id="general-comments" rows="3" placeholder="Any additional observations or comments..."></textarea>
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">Upload Images (optional)</label>
+                <div class="image-upload-zone" id="upload-zone">
+                  <input type="file" id="image-files" accept="image/*" multiple onchange="handleImageSelect(event)">
+                  <div class="upload-icon">📷</div>
+                  <div class="upload-text">Click or drag images here</div>
+                  <div class="upload-hint">PNG, JPG, WEBP — max 5MB each, up to 5 files</div>
+                </div>
+                <div class="image-preview-list" id="image-previews"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Submit Panel -->
+          <div class="submit-panel">
+            <div class="submit-summary">
+              <span id="fail-count-display"></span>
+              <span id="critical-fail-display" style="color:var(--status-red); font-weight:700;"></span>
+            </div>
+            <div class="flex gap-3">
+              <button class="btn btn-secondary" onclick="resetForm()">Clear Form</button>
+              <button class="btn btn-primary btn-lg" id="submit-btn" onclick="submitChecklist()">
+                Submit Checklist
+              </button>
+            </div>
+          </div>
+
+        </div><!-- /checklist-form-wrap -->
+
+      </div><!-- /page-body -->
+    </div><!-- /main-content -->
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/branch.js"></script>
+</body>
+</html>

@@ -1,0 +1,346 @@
+/* =========================================================
+   ATM/ITM Operations Portal — Forms Styles
+   Checklist UI, radio controls, image upload
+   ========================================================= */
+
+/* ─── Checklist Section ──────────────────────────────────── */
+.checklist-section {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+
+.checklist-section-header {
+  background: var(--brand-navy);
+  color: #fff;
+  padding: 10px var(--space-5);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.checklist-section-header.operational { background: var(--brand-navy-mid); }
+.checklist-section-header.physical    { background: #374151; }
+.checklist-section-header.security    { background: #7f1d1d; }
+
+.checklist-item {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--space-4);
+  padding: 12px var(--space-5);
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+
+.checklist-item:last-child { border-bottom: none; }
+.checklist-item:hover { background: var(--surface-2); }
+
+.checklist-item-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  padding-top: 4px;
+}
+
+.checklist-item-label .critical-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  background: #fef2f2;
+  color: var(--status-red);
+  border: 1px solid #fca5a5;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+/* Radio group: Pass / Fail / N/A */
+.radio-group {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  position: relative;
+}
+
+.radio-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+}
+
+.radio-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 100px;
+  border: 1.5px solid var(--border-mid);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  user-select: none;
+  background: var(--white);
+}
+
+.radio-option input[type="radio"]:checked + .radio-label.pass-label {
+  background: var(--status-green-bg);
+  border-color: var(--status-green);
+  color: var(--status-green);
+  font-weight: 600;
+}
+
+.radio-option input[type="radio"]:checked + .radio-label.fail-label {
+  background: var(--status-red-bg);
+  border-color: var(--status-red);
+  color: var(--status-red);
+  font-weight: 600;
+}
+
+.radio-option input[type="radio"]:checked + .radio-label.na-label {
+  background: var(--status-grey-bg);
+  border-color: var(--status-grey);
+  color: var(--status-grey);
+}
+
+.radio-label:hover { border-color: var(--brand-accent); }
+
+/* Note field per checklist item */
+.checklist-item-note { grid-column: 1 / -1; }
+
+.note-trigger {
+  background: none;
+  border: none;
+  color: var(--brand-accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.item-note-field {
+  margin-top: var(--space-2);
+  display: none;
+}
+
+.item-note-field.visible { display: block; }
+
+/* Checklist header row */
+.checklist-col-headers {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--space-4);
+  padding: 6px var(--space-5);
+  background: var(--surface-2);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ─── Image Upload ───────────────────────────────────────── */
+.image-upload-zone {
+  border: 2px dashed var(--border-mid);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--surface-2);
+  position: relative;
+}
+
+.image-upload-zone:hover,
+.image-upload-zone.drag-over {
+  border-color: var(--brand-accent);
+  background: #eff6ff;
+}
+
+.image-upload-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%; height: 100%;
+}
+
+.upload-icon { font-size: 28px; margin-bottom: var(--space-3); }
+.upload-text { font-size: 13px; color: var(--text-secondary); }
+.upload-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* Image previews */
+.image-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.image-preview-item {
+  position: relative;
+  width: 90px; height: 90px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.image-preview-item img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+
+.image-preview-remove {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 18px; height: 18px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ─── Submit Panel ───────────────────────────────────────── */
+.submit-panel {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  position: sticky;
+  bottom: var(--space-4);
+  box-shadow: var(--shadow-md);
+}
+
+.submit-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.submit-summary strong {
+  color: var(--status-red);
+}
+
+/* ─── Machine Selector Card ──────────────────────────────── */
+.machine-selector-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.machine-selector-card h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.machine-info-strip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+}
+
+.machine-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.machine-info-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.machine-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* ─── Vendor Action Form ─────────────────────────────────── */
+.vendor-action-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+}
+
+.vendor-action-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+/* ─── Step Indicator ─────────────────────────────────────── */
+.step-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: var(--space-6);
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.step {
+  flex: 1;
+  padding: 10px var(--space-4);
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+  font-weight: 500;
+}
+
+.step:last-child { border-right: none; }
+
+.step.active {
+  background: var(--brand-navy);
+  color: #fff;
+}
+
+.step.done {
+  background: var(--status-green-bg);
+  color: var(--status-green);
+}
+
+/* ─── Scrollable incident panel ──────────────────────────── */
+.incident-panel-scroll {
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}

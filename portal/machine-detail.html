@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATM/ITM Portal — Machine Detail</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-title">🏧 ATM/ITM Portal</div>
+      <div class="logo-sub">Machine Detail</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Navigation</div>
+      <a href="manager.html" class="nav-item"><span class="nav-icon">← </span> Back to Dashboard</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="nav-user"></div>
+      <button id="logout-btn">Sign Out</button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 id="page-machine-name">Loading machine...</h1>
+        <div class="page-meta text-mono" id="page-terminal-id"></div>
+      </div>
+      <div class="flex gap-3 items-center">
+        <div id="page-status-badge"></div>
+        <button class="btn btn-secondary btn-sm" onclick="history.back()">← Back</button>
+      </div>
+    </div>
+
+    <div class="page-body" id="machine-detail-body">
+      <div class="section-loader"><div class="spinner"></div><p>Loading machine data...</p></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script>
+/**
+ * Machine Detail Page
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!Auth.requireAuth(['atm_manager'])) return;
+  Common.bindLogout();
+  Common.injectNavUser();
+
+  const params = new URLSearchParams(window.location.search);
+  const machineId = params.get('id');
+  if (!machineId) {
+    document.getElementById('machine-detail-body').innerHTML = '<div class="alert alert-error">No machine ID provided.</div>';
+    return;
+  }
+
+  const res = await API.getMachineDetail(machineId);
+  if (!res.success) {
+    document.getElementById('machine-detail-body').innerHTML = '<div class="alert alert-error">Failed to load machine data.</div>';
+    return;
+  }
+
+  renderMachineDetail(res.data);
+});
+
+function renderMachineDetail(data) {
+  const m = data.machine;
+  document.getElementById('page-machine-name').textContent = m.machine_name;
+  document.getElementById('page-terminal-id').textContent = m.terminal_id + ' · ' + m.branch_name;
+  document.getElementById('page-status-badge').innerHTML = statusBadgeCustom(m.current_status);
+
+  const body = document.getElementById('machine-detail-body');
+
+  // Current incident block
+  const currentInc = data.current_incident;
+  const incBlock = currentInc ? `
+    <div class="alert ${currentInc.severity === 'Critical' ? 'alert-error' : 'alert-warning'} mb-5">
+      <div>
+        <strong>Active Incident: ${currentInc.incident_id}</strong> &nbsp;
+        ${incidentBadge(currentInc.status)} &nbsp;
+        Assigned to <strong>${currentInc.vendor_name || 'Unassigned'}</strong> &nbsp;
+        Age: <strong>${Common.fmtDuration(currentInc.aging_minutes)}</strong>
+      </div>
+    </div>` : '';
+
+  // Build last checklist table
+  const lastChecklist = (data.last_checklist || []);
+  const checklistHtml = lastChecklist.length > 0
+    ? lastChecklist.map(item => `
+      <div style="display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; padding:8px 16px; border-bottom:1px solid var(--border); font-size:13px; align-items:center">
+        <span>${item.item_name}</span>
+        <span class="result-${(item.result||'').toLowerCase()}">${item.result || '—'}</span>
+        <span class="text-muted text-sm">${item.note || ''}</span>
+      </div>`).join('')
+    : '<p class="text-muted text-sm" style="padding:16px">No checklist data available.</p>';
+
+  // Images
+  const images = data.recent_images || [];
+  const imagesHtml = images.length > 0
+    ? `<div class="image-grid">${images.map(img =>
+        `<a href="${img.drive_url}" target="_blank" class="image-thumb">
+          <img src="${img.thumbnail_url || img.drive_url}" alt="Incident image">
+        </a>`).join('')}</div>`
+    : '<p class="text-muted text-sm">No images attached.</p>';
+
+  // Incident history table
+  const history = data.incident_history || [];
+  const histColsHtml = history.map(inc => `
+    <tr>
+      <td class="mono">${inc.incident_id}</td>
+      <td>${severityBadge(inc.severity)}</td>
+      <td>${incidentBadge(inc.status)}</td>
+      <td>${inc.vendor_name || '—'}</td>
+      <td>${Common.fmtDateTime(inc.created_at)}</td>
+      <td>${Common.fmtDateTime(inc.resolved_at)}</td>
+      <td class="mono">${Common.fmtDuration(inc.resolution_time_min)}</td>
+    </tr>`).join('');
+
+  const historyHtml = history.length > 0
+    ? `<div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr>
+            <th>Incident ID</th><th>Severity</th><th>Status</th><th>Vendor</th>
+            <th>Created</th><th>Resolved</th><th>Resolution Time</th>
+          </tr></thead>
+          <tbody>${histColsHtml}</tbody>
+        </table>
+      </div>`
+    : '<p class="text-muted text-sm">No incident history.</p>';
+
+  // Timeline
+  const timeline = data.action_log || [];
+  const timelineHtml = timeline.map(t => `
+    <div class="timeline-item">
+      <div class="timeline-time">${Common.fmtDateTime(t.timestamp)}</div>
+      <div class="timeline-text">${t.action_type.replace(/_/g,' ')}</div>
+      <div class="timeline-meta">${t.user_role} · ${t.notes || ''}</div>
+    </div>`).join('') || '<p class="text-muted text-sm">No activity logged.</p>';
+
+  body.innerHTML = `
+    ${incBlock}
+
+    <!-- Machine Info Row -->
+    <div class="grid-3 mb-5">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted text-sm mb-2">Machine Information</div>
+          ${infoRow('Terminal ID', m.terminal_id)}
+          ${infoRow('Type', m.machine_type)}
+          ${infoRow('Branch', m.branch_name)}
+          ${infoRow('Location', m.location_description || '—')}
+          ${infoRow('Status', statusBadgeCustom(m.current_status))}
+          ${infoRow('Tested Today', m.tested_today ? '<span style="color:var(--status-green)">Yes</span>' : '<span style="color:var(--status-grey)">No</span>')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted text-sm mb-2">Activity Summary</div>
+          ${infoRow('Total Incidents', data.stats?.total_incidents || 0)}
+          ${infoRow('Open Incidents', data.stats?.open_incidents || 0)}
+          ${infoRow('Resolved (30d)', data.stats?.resolved_30d || 0)}
+          ${infoRow('Avg Resolution', Common.fmtDuration(data.stats?.avg_resolution_min))}
+          ${infoRow('Last Tested', Common.fmtDateTime(m.last_tested_at))}
+          ${infoRow('Reopen Count', data.stats?.total_reopens || 0)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted text-sm mb-2">Vendor History</div>
+          ${(data.vendor_history || []).map(v => infoRow(v.vendor_name, `${v.incident_count} incidents`)).join('') || '<p class="text-muted text-sm">No vendor history</p>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Last Checklist -->
+    <div class="card mb-5">
+      <div class="card-header">
+        <div class="card-title">Latest Checklist Submission</div>
+        <div class="text-muted text-sm">${Common.fmtDateTime(data.last_check_at)}</div>
+      </div>
+      <div style="padding:0">
+        <div style="display:grid; grid-template-columns:2fr 1fr 2fr; gap:12px; padding:8px 16px; background:var(--surface-2); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); border-bottom:1px solid var(--border)">
+          <span>Check Item</span><span>Result</span><span>Note</span>
+        </div>
+        ${checklistHtml}
+      </div>
+    </div>
+
+    <!-- Images -->
+    <div class="card mb-5">
+      <div class="card-header"><div class="card-title">Recent Images</div></div>
+      <div class="card-body">${imagesHtml}</div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="dashboard-row dashboard-row-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Activity Timeline</div></div>
+        <div class="card-body">
+          <div class="timeline">${timelineHtml}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Incident History</div></div>
+        <div class="card-body-tight">${historyHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+function infoRow(label, value) {
+  return `<div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:12px">
+    <span class="text-muted">${label}</span>
+    <span style="font-weight:600; text-align:right">${value}</span>
+  </div>`;
+}
+
+function statusBadgeCustom(status) {
+  const cfg = CONFIG.STATUS_CONFIG[status] || CONFIG.STATUS_CONFIG.GREY;
+  return `<span class="status-badge" style="color:${cfg.color};background:${cfg.bg};border:1px solid ${cfg.border}">${cfg.label}</span>`;
+}
+
+function incidentBadge(status) {
+  return Common.incidentBadge(status);
+}
+
+function severityBadge(severity) {
+  return Common.severityBadge(severity);
+}
+</script>
+</body>
+</html>

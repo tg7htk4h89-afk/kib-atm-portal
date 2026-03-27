@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATM/ITM Portal — Vendor</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/forms.css">
+</head>
+<body>
+<div class="layout">
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-title">🏧 ATM/ITM Portal</div>
+      <div class="logo-sub">Vendor Portal</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">My Incidents</div>
+      <a href="vendor.html" class="nav-item active">
+        <span class="nav-icon">⚠️</span> Assigned Incidents
+      </a>
+      <a href="vendor.html?filter=resolved" class="nav-item">
+        <span class="nav-icon">✓</span> Resolved
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="nav-user"></div>
+      <button id="logout-btn">Sign Out</button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <div class="page-header">
+      <h1>My Assigned Incidents</h1>
+      <div class="page-meta" id="vendor-name-display"></div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- Filters -->
+      <div class="filters-bar mb-5">
+        <div class="filter-group">
+          <div class="filter-label">Status</div>
+          <select class="filter-control" id="vendor-filter-status" onchange="filterIncidents()">
+            <option value="">All Active</option>
+            <option value="Assigned">Assigned</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Pending">Pending</option>
+            <option value="Resolved">Resolved</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <div class="filter-label">Severity</div>
+          <select class="filter-control" id="vendor-filter-severity" onchange="filterIncidents()">
+            <option value="">All</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2" id="vendor-layout" style="align-items:start">
+
+        <!-- Left: Incident List -->
+        <div>
+          <div class="section-header">
+            <div class="section-title">Incidents <span class="section-badge" id="incident-count-badge">0</span></div>
+          </div>
+          <div id="vendor-incident-list">
+            <div class="section-loader"><div class="spinner"></div></div>
+          </div>
+        </div>
+
+        <!-- Right: Detail + Action Panel -->
+        <div id="vendor-detail-panel" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title" id="detail-incident-id">—</div>
+              <div id="detail-status-badge"></div>
+            </div>
+            <div class="card-body">
+
+              <!-- Machine Info -->
+              <div class="machine-info-strip mb-4" style="margin-top:0">
+                <div class="machine-info-item">
+                  <span class="machine-info-label">Machine</span>
+                  <span class="machine-info-value" id="detail-machine-name">—</span>
+                </div>
+                <div class="machine-info-item">
+                  <span class="machine-info-label">Terminal ID</span>
+                  <span class="machine-info-value" id="detail-terminal-id">—</span>
+                </div>
+                <div class="machine-info-item">
+                  <span class="machine-info-label">Branch</span>
+                  <span class="machine-info-value" id="detail-branch">—</span>
+                </div>
+                <div class="machine-info-item">
+                  <span class="machine-info-label">Severity</span>
+                  <span id="detail-severity">—</span>
+                </div>
+              </div>
+
+              <!-- Failed Checklist Items -->
+              <div class="mb-4">
+                <div class="text-muted text-sm" style="font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px">Failed Checklist Items</div>
+                <div id="detail-failed-items"></div>
+              </div>
+
+              <!-- General Comments from Branch -->
+              <div class="mb-4">
+                <div class="text-muted text-sm" style="font-weight:600; margin-bottom:4px">Branch Comments</div>
+                <p id="detail-branch-comments" class="text-sm" style="background:var(--surface-2); padding:10px; border-radius:var(--radius); border:1px solid var(--border)">—</p>
+              </div>
+
+              <!-- Images -->
+              <div class="mb-4">
+                <div class="text-muted text-sm" style="font-weight:600; margin-bottom:8px">Attached Images</div>
+                <div class="image-grid" id="detail-images">
+                  <p class="text-muted text-sm">No images</p>
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- Vendor Action Form -->
+              <div class="vendor-action-panel">
+                <h3>Update This Incident</h3>
+
+                <div class="form-group">
+                  <label class="form-label required">New Status</label>
+                  <select class="form-control" id="action-status">
+                    <option value="">— Select Status —</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Pending">Pending — Awaiting Parts</option>
+                    <option value="Resolved">Resolved</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">Vendor Notes / Action Taken</label>
+                  <textarea class="form-control" id="action-notes" rows="3" placeholder="Describe the action taken, findings, or reason for status change..."></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Vendor Reference / Job Number</label>
+                  <input type="text" class="form-control" id="action-reference" placeholder="e.g., JOB-2024-001 or ticket number">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Upload Proof / Repair Image</label>
+                  <div class="image-upload-zone" id="proof-upload-zone" style="padding:16px">
+                    <input type="file" id="proof-image-file" accept="image/*" onchange="handleProofImage(event)">
+                    <div class="upload-text">Click to upload repair proof</div>
+                    <div class="upload-hint">Single image, max 5MB</div>
+                  </div>
+                  <div id="proof-preview" class="mt-2"></div>
+                </div>
+
+                <button class="btn btn-primary btn-full" id="vendor-submit-btn" onclick="submitVendorUpdate()">
+                  Save Update
+                </button>
+
+                <div class="alert alert-success mt-2 hidden" id="vendor-success-alert">
+                  ✓ Update saved successfully.
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Timeline -->
+          <div class="card mt-4">
+            <div class="card-header"><div class="card-title">Incident Timeline</div></div>
+            <div class="card-body">
+              <div class="timeline" id="detail-timeline">
+                <p class="text-muted text-sm">No activity yet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty right panel prompt -->
+        <div id="vendor-select-prompt" style="display:flex; align-items:center; justify-content:center; height:300px; color:var(--text-muted); font-size:13px; border:2px dashed var(--border); border-radius:var(--radius-lg)">
+          ← Select an incident to view details
+        </div>
+
+      </div><!-- /grid-2 -->
+    </div><!-- /page-body -->
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/vendor.js"></script>
+</body>
+</html>

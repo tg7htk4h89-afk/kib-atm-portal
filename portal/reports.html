@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATM/ITM Portal — Reports</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-title">🏧 ATM/ITM Portal</div>
+      <div class="logo-sub">Reports & Analytics</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Navigation</div>
+      <a href="manager.html" class="nav-item"><span class="nav-icon">📊</span> Dashboard</a>
+      <div class="nav-section">Reports</div>
+      <a href="reports.html" class="nav-item active"><span class="nav-icon">📈</span> Reports</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="nav-user"></div>
+      <button id="logout-btn">Sign Out</button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <div class="page-header">
+      <h1>Operations Reports</h1>
+      <div class="flex gap-3">
+        <select class="filter-control" id="report-range" onchange="loadReport()">
+          <option value="daily">Today</option>
+          <option value="weekly">Last 7 Days</option>
+          <option value="monthly" selected>Last 30 Days</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="exportReport()">↓ Export CSV</button>
+        <button class="btn btn-primary btn-sm" onclick="loadReport()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- Report KPIs -->
+      <div class="kpi-grid" id="report-kpis">
+        <div class="kpi-card"><div class="section-loader"><div class="spinner"></div></div></div>
+      </div>
+
+      <!-- Section Tabs -->
+      <div class="tab-strip">
+        <button class="tab-btn active" onclick="switchReportTab(this, 'tab-summary')">Summary</button>
+        <button class="tab-btn" onclick="switchReportTab(this, 'tab-not-tested')">Not Tested</button>
+        <button class="tab-btn" onclick="switchReportTab(this, 'tab-vendor')">Vendor Performance</button>
+        <button class="tab-btn" onclick="switchReportTab(this, 'tab-security')">Security Issues</button>
+        <button class="tab-btn" onclick="switchReportTab(this, 'tab-aging')">Aging Incidents</button>
+        <button class="tab-btn" onclick="switchReportTab(this, 'tab-resolved')">Resolved</button>
+      </div>
+
+      <!-- TAB: Summary -->
+      <div id="tab-summary" class="tab-panel active">
+        <div class="dashboard-row dashboard-row-2 mb-5">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Daily Test Coverage</div></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="coverage-chart"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Incident Category Breakdown</div></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="category-chart"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <div class="card mb-5">
+          <div class="card-header"><div class="card-title">Branch-wise Issue Count</div></div>
+          <div class="card-body-tight">
+            <div id="branch-summary-table"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Not Tested -->
+      <div id="tab-not-tested" class="tab-panel">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Machines Not Tested (by day)</div>
+          </div>
+          <div class="card-body-tight">
+            <div id="not-tested-table"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Vendor Performance -->
+      <div id="tab-vendor" class="tab-panel">
+        <div class="dashboard-row dashboard-row-2 mb-5">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Resolution Rate by Vendor</div></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="vendor-chart"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Avg Resolution Time (hours)</div></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="resolution-time-chart"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Vendor Performance Details</div></div>
+          <div class="card-body-tight">
+            <div id="vendor-detail-table"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Security Issues -->
+      <div id="tab-security" class="tab-panel">
+        <div class="alert alert-warning mb-4">
+          ⚠ Security issues require immediate escalation and management notification.
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Security Incidents</div></div>
+          <div class="card-body-tight">
+            <div id="security-table"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Aging -->
+      <div id="tab-aging" class="tab-panel">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Aging Open Incidents</div></div>
+          <div class="card-body-tight">
+            <div id="aging-table"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Resolved -->
+      <div id="tab-resolved" class="tab-panel">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Resolved Incidents — Turnaround</div></div>
+          <div class="card-body-tight">
+            <div id="resolved-table"></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /page-body -->
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/reports.js"></script>
+</body>
+</html>
