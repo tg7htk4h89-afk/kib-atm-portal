@@ -83,10 +83,11 @@ const Auth = (() => {
   async function login(username, password) {
     const res = await API.post(CONFIG.ENDPOINTS.LOGIN, { username, password });
     if (res.success) {
-      setSession(res.data);
-      return { success: true, role: res.data.role };
+      const userData = res.user || res.data || {};
+      setSession(userData);
+      return { success: true, role: userData.role };
     }
-    return { success: false, message: res.message || 'Invalid credentials.' };
+    return { success: false, message: res.error || res.message || 'Invalid credentials.' };
   }
 
   function logout() {
