@@ -1,11 +1,8 @@
 /**
  * ATM/ITM Operations Portal — Auth Module
- * Handles session creation, validation, role-based page protection, and logout.
  */
 
 const Auth = (() => {
-
-  // ─── Session Read/Write ───────────────────────────────────────────────────
 
   function setSession(userData) {
     const session = {
@@ -29,7 +26,6 @@ const Auth = (() => {
       const raw = sessionStorage.getItem(CONFIG.SESSION_KEY);
       if (!raw) return null;
       const session = JSON.parse(raw);
-      // Check expiry
       if (new Date(session.expires_at) < new Date()) {
         clearSession();
         return null;
@@ -48,37 +44,52 @@ const Auth = (() => {
     return getSession() !== null;
   }
 
-  // ─── Role Protection ──────────────────────────────────────────────────────
+  // Role aliases — map any role variant to canonical group
+  function _canonicalRole(role) {
+    if (!role) return '';
+    const map = {
+      'manager':     'manager',
+      'atm_manager': 'manager',
+      'branch_user': 'branch_user',
+      'vendor':      'vendor',
+      'vendor_user': 'vendor',
+    };
+    return map[role] || role;
+  }
 
   function requireAuth(allowedRoles) {
     const session = getSession();
-    const page = window.location.pathname.split('/').pop();
 
     if (!session) {
       window.location.href = 'login.html?reason=session_expired';
       return false;
     }
 
-    const roles = allowedRoles || CONFIG.PAGE_ROLES[page] || [];
-    if (roles.length > 0 && !roles.includes(session.role)) {
-      window.location.href = CONFIG.ROLE_HOME[session.role] || 'login.html';
+    // Normalize the session role
+    const canonical = _canonicalRole(session.role);
+
+    // Normalize allowed roles too
+    const normalizedAllowed = (allowedRoles || []).map(_canonicalRole);
+
+    if (normalizedAllowed.length > 0 && !normalizedAllowed.includes(canonical)) {
+      // Redirect to their correct home — but only if not already there
+      const destMap = { manager: 'manager.html', branch_user: 'branch.html', vendor: 'vendor.html' };
+      const dest = destMap[canonical] || 'login.html';
+      const current = window.location.pathname.split('/').pop();
+      if (current !== dest) {
+        window.location.href = dest;
+      }
       return false;
     }
 
-    // Inject user info into any .user-display element
     const displayEl = document.getElementById('current-user-display');
     if (displayEl) {
-      displayEl.textContent = session.full_name + ' (' + _roleLabel(session.role) + ')';
+      const labels = { manager: 'Manager', branch_user: 'Branch', vendor: 'Vendor' };
+      displayEl.textContent = session.full_name + ' (' + (labels[canonical] || canonical) + ')';
     }
 
     return true;
   }
-
-  function _roleLabel(role) {
-    return { branch_user: 'Branch', atm_manager: 'Manager', vendor_user: 'Vendor' }[role] || role;
-  }
-
-  // ─── Login / Logout ───────────────────────────────────────────────────────
 
   async function login(username, password) {
     const res = await API.post(CONFIG.ENDPOINTS.LOGIN, { username, password });
@@ -95,6 +106,5 @@ const Auth = (() => {
     window.location.href = 'login.html?reason=logout';
   }
 
-  // Public
   return { setSession, getSession, clearSession, isLoggedIn, requireAuth, login, logout };
 })();
