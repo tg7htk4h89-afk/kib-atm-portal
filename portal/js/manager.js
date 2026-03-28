@@ -159,11 +159,11 @@ function _renderOverdue(items) {
       <div class="overdue-item-left">
         <div class="overdue-item-name">
           <span class="text-mono">${item.incident_id}</span> —
-          ${item.machine_name} <span class="text-muted text-sm">(${item.branch_name})</span>
+          ${item.terminal_id} <span class="text-muted text-sm">(${item.branch_name})</span>
         </div>
         <div class="overdue-item-meta">
           ${Common.incidentBadge(item.status)} &nbsp;
-          Vendor: <strong>${item.vendor_name || 'Unassigned'}</strong> &nbsp;|&nbsp;
+          Vendor: <strong>${item.assigned_vendor_name || 'Unassigned'}</strong> &nbsp;|&nbsp;
           ${Common.severityBadge(item.severity)}
         </div>
       </div>
@@ -191,7 +191,7 @@ function _renderNotTested(machines) {
 
   list.innerHTML = machines.map(m =>
     `<div class="not-tested-chip" onclick="window.location.href='machine-detail.html?id=${m.machine_id}'" style="cursor:pointer">
-      <span>${m.machine_name}</span>
+      <span>${m.terminal_id}</span>
       <span class="text-muted text-sm" style="margin-left:4px">${m.branch_name}</span>
     </div>`
   ).join('');
@@ -215,7 +215,7 @@ function _renderMachineGrid(machines) {
     return `
       <div class="machine-tile ${tileClass}" onclick="window.location.href='machine-detail.html?id=${m.machine_id}'">
         <div class="tile-id">${m.terminal_id}</div>
-        <div class="tile-name">${m.machine_name}</div>
+        <div class="tile-name">${m.location_description || m.machine_type || ""}</div>
         <div class="tile-branch">${m.branch_name}</div>
         <div class="tile-status">${Common.statusBadge(status)}</div>
         <div class="tile-meta">
@@ -241,11 +241,11 @@ function _renderIncidentTable(incidents) {
   const cols = [
     { key: 'incident_id',    label: 'Incident ID',   className: 'mono col-tight',
       render: (v) => `<a href="#" onclick="openIncidentModal('${v}'); return false" style="color:var(--brand-accent); font-weight:600">${v}</a>` },
-    { key: 'machine_name',   label: 'Machine' },
+    { key: 'terminal_id',    label: 'Machine' },
     { key: 'branch_name',    label: 'Branch' },
     { key: 'severity',       label: 'Severity',       render: (v) => Common.severityBadge(v) },
     { key: 'status',         label: 'Status',         render: (v) => Common.incidentBadge(v) },
-    { key: 'vendor_name',    label: 'Assigned Vendor' },
+    { key: 'assigned_vendor_name', label: 'Assigned Vendor' },
     { key: 'aging_minutes',  label: 'Age',            className: 'mono',
       render: (v, row) => `<span class="${v > 480 ? 'text-sm' : ''}" style="color:${v>480?'var(--status-red)':v>120?'var(--status-amber)':'inherit'}">${Common.fmtDuration(v)}</span>` },
     { key: 'created_at',     label: 'Created',        render: (v) => Common.fmtDateTime(v) },
@@ -263,7 +263,7 @@ function _renderIncidentTable(incidents) {
 function _renderRepeatedIssues(machines) {
   const container = document.getElementById('repeated-table');
   const cols = [
-    { key: 'machine_name',       label: 'Machine' },
+    { key: 'terminal_id',        label: 'Machine' },
     { key: 'branch_name',        label: 'Branch' },
     { key: 'terminal_id',        label: 'Terminal ID', className: 'mono' },
     { key: 'incident_count',     label: 'Incidents (30d)',
@@ -318,7 +318,7 @@ function applyFilters() {
   };
   if (dashboardData) {
     _renderMachineGrid(dashboardData.machines);
-    _renderIncidentTable(dashboardData.active_incidents.filter(i => {
+    _renderIncidentTable((dashboardData.open_incidents || dashboardData.active_incidents || []).filter(i => {
       if (activeFilters.vendor && i.vendor_id !== activeFilters.vendor) return false;
       if (activeFilters.branch && i.branch_id !== activeFilters.branch) return false;
       return true;
@@ -334,7 +334,7 @@ function clearFilters() {
   });
   if (dashboardData) {
     _renderMachineGrid(dashboardData.machines);
-    _renderIncidentTable(dashboardData.active_incidents);
+    _renderIncidentTable(dashboardData.open_incidents || dashboardData.active_incidents);
   }
 }
 
@@ -353,7 +353,7 @@ async function openIncidentModal(incidentId) {
     document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Failed to load incident.</div>';
     return;
   }
-  _renderIncidentModal(res.data);
+  _renderIncidentModal(res.incident || res.data || res);
 }
 
 function _renderIncidentModal(inc) {
@@ -376,7 +376,7 @@ function _renderIncidentModal(inc) {
       </div>`).join('')
     : '<p class="text-muted text-sm">No checklist data.</p>';
 
-  const timelineHtml = (inc.action_log || []).map(log => `
+  const timelineHtml = (inc.timeline || inc.action_log || []).map(log => `
     <div class="timeline-item ${log.action_type === 'INCIDENT_RESOLVED' ? 'tl-resolved' : log.action_type === 'INCIDENT_CREATED' ? 'tl-critical' : ''}">
       <div class="timeline-time">${Common.fmtDateTime(log.timestamp)}</div>
       <div class="timeline-text">${log.action_type.replace(/_/g,' ')}</div>
@@ -388,7 +388,7 @@ function _renderIncidentModal(inc) {
     <div class="grid-2 mb-4">
       <div>
         <div class="text-muted text-sm">Machine</div>
-        <div style="font-weight:600">${inc.machine_name} <span class="text-mono text-sm text-muted">(${inc.terminal_id})</span></div>
+        <div style="font-weight:600">${inc.terminal_id} <span class="text-mono text-sm text-muted">(${inc.branch_name})</span></div>
       </div>
       <div>
         <div class="text-muted text-sm">Branch</div>
@@ -404,7 +404,7 @@ function _renderIncidentModal(inc) {
       </div>
       <div>
         <div class="text-muted text-sm">Assigned Vendor</div>
-        <div style="font-weight:600">${inc.vendor_name || 'Unassigned'}</div>
+        <div style="font-weight:600">${inc.assigned_vendor_name || inc.vendor_name || 'Unassigned'}</div>
       </div>
       <div>
         <div class="text-muted text-sm">Aging</div>
