@@ -52,7 +52,7 @@ async function loadBranches(preselect) {
   const branchSelect = document.getElementById('branch-select');
 
   if (res.success) {
-    const branches = res.data.branches || [];
+    const branches = res.branches || res.data?.branches || [];
     Common.setSelectOptions('branch-select', branches.map(b => ({ value: b.branch_id, label: b.branch_name })), '— Select Branch —');
 
     if (preselect || (session.role === 'branch_user' && session.branch_id)) {
@@ -77,9 +77,9 @@ async function onBranchChange() {
 
   const res = await API.getMachines(branchId);
   if (res.success) {
-    const machines = res.data.machines || [];
+    const machines = res.machines || res.data?.machines || [];
     Common.setSelectOptions('machine-select',
-      machines.map(m => ({ value: m.machine_id, label: `${m.machine_name} (${m.terminal_id})` })),
+      machines.map(m => ({ value: m.machine_id, label: `${m.location_description || m.machine_type} (${m.terminal_id})` })),
       '— Select Machine —'
     );
   }
