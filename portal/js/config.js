@@ -92,11 +92,11 @@ const CONFIG = {
 
   // ─── Allowed Roles Per Page ───────────────────────────────────────────────
   PAGE_ROLES: {
-    'branch.html':       ['branch_user', 'atm_manager'],
-    'manager.html':      ['atm_manager'],
-    'vendor.html':       ['vendor_user', 'atm_manager'],
-    'reports.html':      ['atm_manager'],
-    'machine-detail.html': ['atm_manager'],
+    'branch.html':         ['branch_user', 'atm_manager', 'manager'],
+    'manager.html':        ['atm_manager', 'manager'],
+    'vendor.html':         ['vendor_user', 'atm_manager', 'vendor', 'manager'],
+    'reports.html':        ['atm_manager', 'manager'],
+    'machine-detail.html': ['atm_manager', 'manager'],
   },
 };
 
