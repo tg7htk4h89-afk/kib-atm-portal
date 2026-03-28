@@ -8,7 +8,7 @@ let trendChart = null;
 let activeFilters = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['atm_manager', 'manager'])) return;
+  if (!Auth.requireAuth(['manager'])) return;
   Common.bindLogout();
   Common.injectNavUser();
   _startLiveClock();
