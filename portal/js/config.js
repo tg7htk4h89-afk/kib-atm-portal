@@ -84,6 +84,8 @@ const CONFIG = {
   // ─── Role Route Map ───────────────────────────────────────────────────────
   ROLE_HOME: {
     branch_user: 'branch.html',
+    manager:     'manager.html',
+    vendor:      'vendor.html',
     atm_manager: 'manager.html',
     vendor_user:  'vendor.html',
   },
