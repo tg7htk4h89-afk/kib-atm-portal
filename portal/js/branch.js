@@ -314,44 +314,39 @@ async function submitChecklist() {
   const session = Auth.getSession();
   const items = _getAllItems();
 
+  // Normalize result values: PASS->Pass, FAIL->Fail, NA->N/A
+  const resultMap = { 'PASS': 'Pass', 'FAIL': 'Fail', 'NA': 'N/A' };
+  const normalizedItems = items.map(i => ({
+    item_id:    i.item_id,
+    item_name:  i.item_name,
+    category:   i.category || '',
+    result:     resultMap[i.result] || i.result || 'N/A',
+    notes:      i.note || '',
+    is_critical: i.critical ? 'TRUE' : 'FALSE'
+  }));
+
   const payload = {
     machine_id:       selectedMachine.machine_id,
-    terminal_id:      selectedMachine.terminal_id,
+    terminal_id:      selectedMachine.terminal_id || '',
     branch_id:        document.getElementById('branch-select').value,
-    machine_type:     selectedMachine.machine_type,
+    branch_name:      selectedMachine.branch_name || '',
+    machine_type:     selectedMachine.machine_type || 'ATM',
     submitted_by:     session.user_id,
     submitted_name:   document.getElementById('inspector-name').value,
     submitted_role:   session.role,
     inspection_time:  document.getElementById('inspection-time').value,
     general_comments: document.getElementById('general-comments').value,
-    items:            items,
-    has_images:       selectedImages.length > 0,
+    items:            normalizedItems,
+    images:           [],
     submitted_at:     new Date().toISOString(),
   };
-
-  // If there are images, upload them via FormData
-  let imageUploadIds = [];
-  if (selectedImages.length > 0) {
-    const fd = new FormData();
-    selectedImages.forEach(f => fd.append('images', f));
-    fd.append('machine_id', selectedMachine.machine_id);
-    fd.append('context', 'checklist');
-    const imgRes = await API.uploadImage(fd);
-    if (imgRes.success) {
-      imageUploadIds = imgRes.data.file_ids || [];
-    } else {
-      Common.toast('Image upload failed. Submitting without images.', 'warning');
-    }
-  }
-
-  payload.image_ids = imageUploadIds;
 
   const res = await API.submitChecklist(payload);
   Common.setLoading('submit-btn', false);
 
   if (res.success) {
-    const status = res.data.machine_status;
-    const incidentId = res.data.incident_id;
+    const status = res.machine_status || res.data?.machine_status || 'GREEN';
+    const incidentId = res.incident_id || res.data?.incident_id || null;
 
     const alertEl = document.getElementById('success-alert');
     const detailEl = document.getElementById('success-detail');
@@ -377,7 +372,7 @@ async function submitChecklist() {
     selectedImages = [];
     selectedMachine = null;
   } else {
-    Common.toast(res.message || 'Submission failed. Please try again.', 'error');
+    Common.toast(res.error || res.message || 'Submission failed. Please try again.', 'error');
   }
 }
 
