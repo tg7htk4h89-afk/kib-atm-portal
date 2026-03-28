@@ -8,7 +8,7 @@ let trendChart = null;
 let activeFilters = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['atm_manager'])) return;
+  if (!Auth.requireAuth(['atm_manager', 'manager'])) return;
   Common.bindLogout();
   Common.injectNavUser();
   _startLiveClock();
@@ -35,33 +35,36 @@ async function loadDashboard() {
     Common.toast('Failed to load dashboard data.', 'error');
     return;
   }
-  dashboardData = res.data;
+  dashboardData = res.data || res;
+  const d = dashboardData;
   document.getElementById('last-refresh-label').textContent = 'Last refreshed: ' + new Date().toLocaleTimeString('en-GB');
 
-  _renderKPIs(dashboardData.kpis);
-  _renderStatusChart(dashboardData.status_summary);
-  _renderTrendChart(dashboardData.trend_7days);
-  _renderOverdue(dashboardData.overdue_incidents);
-  _renderNotTested(dashboardData.not_tested_today);
-  _renderMachineGrid(dashboardData.machines);
-  _renderIncidentTable(dashboardData.active_incidents);
-  _renderRepeatedIssues(dashboardData.repeated_machines);
-  _renderVendorPerformance(dashboardData.vendor_performance);
-  _populateFilterDropdowns(dashboardData.branches, dashboardData.vendors);
+  _renderKPIs(d.kpis);
+  _renderStatusChart(d.status_summary || d.summary);
+  _renderTrendChart(d.trend_7d || d.trend_7days);
+  _renderOverdue(d.overdue_incidents);
+  _renderNotTested(d.not_tested_today);
+  _renderMachineGrid(d.machines);
+  _renderIncidentTable(d.open_incidents || d.active_incidents);
+  _renderRepeatedIssues(d.repeated_issues || d.repeated_machines);
+  _renderVendorPerformance(d.vendor_performance);
+  _populateFilterDropdowns(d.branches, d.vendors);
 }
 
 function _renderKPIs(kpis) {
   if (!kpis) return;
+  // Support both field name formats
+  const summary = dashboardData.summary || {};
   const grid = document.getElementById('kpi-grid');
   grid.innerHTML = [
-    Common.kpiCard('Total Machines',    kpis.total_machines,  null,        'kpi-blue',  '🏧'),
-    Common.kpiCard('Critical Issues',   kpis.red_count,       'Immediate action needed', 'kpi-red',   '🔴'),
-    Common.kpiCard('Open Issues',       kpis.amber_count,     'Require attention', 'kpi-amber', '🟡'),
-    Common.kpiCard('Healthy',           kpis.green_count,     'Fully operational', 'kpi-green', '🟢'),
-    Common.kpiCard('Not Tested Today',  kpis.grey_count,      'Awaiting check',   'kpi-grey',  '⚫'),
-    Common.kpiCard('Open Incidents',    kpis.open_incidents,  `Avg age: ${Common.fmtDuration(kpis.avg_aging_min)}`, 'kpi-red', '⚠️'),
-    Common.kpiCard('Resolved Today',    kpis.resolved_today,  null,        'kpi-green', '✓'),
-    Common.kpiCard('Overdue',           kpis.overdue_count,   'SLA breached', 'kpi-red',  '⏱'),
+    Common.kpiCard('Total Machines',    summary.total_machines || kpis.total_machines || 0,  null, 'kpi-blue',  '🏧'),
+    Common.kpiCard('Critical Issues',   summary.red  || kpis.red_count  || 0, 'Immediate action needed', 'kpi-red',   '🔴'),
+    Common.kpiCard('Open Issues',       summary.amber || kpis.amber_count || 0, 'Require attention', 'kpi-amber', '🟡'),
+    Common.kpiCard('Healthy',           summary.green || kpis.green_count || 0, 'Fully operational', 'kpi-green', '🟢'),
+    Common.kpiCard('Not Tested Today',  summary.not_tested || summary.grey || kpis.grey_count || 0, 'Awaiting check', 'kpi-grey', '⚫'),
+    Common.kpiCard('Open Incidents',    kpis.open_incidents || 0, null, 'kpi-red', '⚠️'),
+    Common.kpiCard('Resolved Today',    kpis.resolved_today || 0, null, 'kpi-green', '✓'),
+    Common.kpiCard('Overdue',           kpis.overdue_incidents || kpis.overdue_count || 0, 'SLA breached', 'kpi-red', '⏱'),
   ].join('');
 }
 
