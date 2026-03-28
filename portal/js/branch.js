@@ -96,8 +96,21 @@ async function onMachineChange() {
   // Fetch machine detail
   const res = await API.getMachineDetail(machineId);
   if (res.success) {
-    selectedMachine = res.data;
-    _populateMachineInfo(res.data);
+    const machine = res.machine || res.data || {};
+    selectedMachine = machine;
+    _populateMachineInfo(machine);
+    _renderChecklist();
+    document.getElementById('machine-info-strip').classList.remove('hidden');
+    document.getElementById('checklist-form-wrap').classList.remove('hidden');
+    document.getElementById('success-alert').classList.add('hidden');
+  } else {
+    // fallback: use machine data from the dropdown selection
+    const machines = document.getElementById('machine-select');
+    const allMachinesRes = await API.getMachines();
+    const allMachines = allMachinesRes.machines || allMachinesRes.data?.machines || [];
+    const machine = allMachines.find(m => m.machine_id === machineId) || { machine_id: machineId };
+    selectedMachine = machine;
+    _populateMachineInfo(machine);
     _renderChecklist();
     document.getElementById('machine-info-strip').classList.remove('hidden');
     document.getElementById('checklist-form-wrap').classList.remove('hidden');
