@@ -345,32 +345,35 @@ let currentIncidentId = null;
 async function openIncidentModal(incidentId) {
   currentIncidentId = incidentId;
   document.getElementById('modal-incident-id').textContent = `Incident: ${incidentId}`;
+  document.getElementById('modal-incident-body').innerHTML = '<div class="section-loader"><div class="spinner"></div></div>';
   Common.openModal('incident-modal');
 
-  // First try from already-loaded dashboard data (fast, no extra API call)
+  // Get basic incident data from dashboard cache
   const allIncidents = [
     ...(dashboardData?.open_incidents || dashboardData?.active_incidents || []),
     ...(dashboardData?.overdue_incidents || [])
   ];
   const cached = allIncidents.find(i => i.incident_id === incidentId);
 
+  // Render basic info immediately from cache
   if (cached) {
-    // Use cached data immediately
     _renderIncidentModal(cached);
-    return;
   }
 
-  // Fallback: fetch from API
-  document.getElementById('modal-incident-body').innerHTML = '<div class="section-loader"><div class="spinner"></div></div>';
+  // Then fetch full details (checklist + timeline + images) from API
   try {
     const res = await API.getIncidentDetails(incidentId);
     if (res && res.success) {
-      _renderIncidentModal(res.incident || res.data || res);
-    } else {
-      document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Failed to load incident details.</div>';
+      const full = res.incident || res.data || res;
+      // Merge cache + full data
+      const merged = { ...(cached || {}), ...full };
+      _renderIncidentModal(merged);
     }
   } catch(e) {
-    document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Error loading incident.</div>';
+    // Keep showing cached data if API fails
+    if (!cached) {
+      document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Error loading incident details.</div>';
+    }
   }
 }
 
