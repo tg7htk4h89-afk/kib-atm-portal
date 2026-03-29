@@ -345,15 +345,33 @@ let currentIncidentId = null;
 async function openIncidentModal(incidentId) {
   currentIncidentId = incidentId;
   document.getElementById('modal-incident-id').textContent = `Incident: ${incidentId}`;
-  document.getElementById('modal-incident-body').innerHTML = '<div class="section-loader"><div class="spinner"></div></div>';
   Common.openModal('incident-modal');
 
-  const res = await API.getIncidentDetails(incidentId);
-  if (!res.success) {
-    document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Failed to load incident.</div>';
+  // First try from already-loaded dashboard data (fast, no extra API call)
+  const allIncidents = [
+    ...(dashboardData?.open_incidents || dashboardData?.active_incidents || []),
+    ...(dashboardData?.overdue_incidents || [])
+  ];
+  const cached = allIncidents.find(i => i.incident_id === incidentId);
+
+  if (cached) {
+    // Use cached data immediately
+    _renderIncidentModal(cached);
     return;
   }
-  _renderIncidentModal(res.incident || res.data || res);
+
+  // Fallback: fetch from API
+  document.getElementById('modal-incident-body').innerHTML = '<div class="section-loader"><div class="spinner"></div></div>';
+  try {
+    const res = await API.getIncidentDetails(incidentId);
+    if (res && res.success) {
+      _renderIncidentModal(res.incident || res.data || res);
+    } else {
+      document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Failed to load incident details.</div>';
+    }
+  } catch(e) {
+    document.getElementById('modal-incident-body').innerHTML = '<div class="alert alert-error">Error loading incident.</div>';
+  }
 }
 
 function _renderIncidentModal(inc) {
@@ -459,8 +477,7 @@ async function showReassignPanel() {
   Common.closeModal('incident-modal');
 
   // Load vendor list
-  const res = await API.getManagerDashboard({});
-  const vendors = res.data?.vendors || [];
+  const vendors = dashboardData?.vendors || [];
   Common.setSelectOptions('reassign-vendor-select', vendors.map(v => ({ value: v.vendor_id, label: v.vendor_name })), '— Select Vendor —');
 
   document.getElementById('reassign-incident-id').value = currentIncidentId;
@@ -500,9 +517,9 @@ async function reopenIncident() {
   if (!currentIncidentId) return;
   const session = Auth.getSession();
   const res = await API.reopenIncident({
-    incident_id:  currentIncidentId,
-    reopened_by:  session.user_id,
-    reason:       'Manager reopened via dashboard',
+    incident_id:   currentIncidentId,
+    reopen_reason: 'Manager reopened via dashboard',
+    manager_notes: 'Manager reopened via dashboard',
   });
 
   if (res.success) {
