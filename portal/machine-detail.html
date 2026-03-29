@@ -52,7 +52,7 @@
  * Machine Detail Page
  */
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['atm_manager'])) return;
+  if (!Auth.requireAuth(['manager'])) return;
   Common.bindLogout();
   Common.injectNavUser();
 
@@ -69,12 +69,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  renderMachineDetail(res.data);
+  renderMachineDetail(res.data || res);
 });
 
 function renderMachineDetail(data) {
   const m = data.machine;
-  document.getElementById('page-machine-name').textContent = m.machine_name;
+  document.getElementById('page-machine-name').textContent = m.location_description || m.machine_type || m.terminal_id || 'Machine';
   document.getElementById('page-terminal-id').textContent = m.terminal_id + ' · ' + m.branch_name;
   document.getElementById('page-status-badge').innerHTML = statusBadgeCustom(m.current_status);
 
@@ -87,7 +87,7 @@ function renderMachineDetail(data) {
       <div>
         <strong>Active Incident: ${currentInc.incident_id}</strong> &nbsp;
         ${incidentBadge(currentInc.status)} &nbsp;
-        Assigned to <strong>${currentInc.vendor_name || 'Unassigned'}</strong> &nbsp;
+        Assigned to <strong>${currentInc.assigned_vendor_name || currentInc.vendor_name || 'Unassigned'}</strong> &nbsp;
         Age: <strong>${Common.fmtDuration(currentInc.aging_minutes)}</strong>
       </div>
     </div>` : '';
@@ -138,7 +138,7 @@ function renderMachineDetail(data) {
     : '<p class="text-muted text-sm">No incident history.</p>';
 
   // Timeline
-  const timeline = data.action_log || [];
+  const timeline = data.timeline || data.action_log || [];
   const timelineHtml = timeline.map(t => `
     <div class="timeline-item">
       <div class="timeline-time">${Common.fmtDateTime(t.timestamp)}</div>
