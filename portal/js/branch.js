@@ -843,14 +843,10 @@ async function viewLastTest(machineDataStr) {
   modal.style.display = 'flex';
 
   try {
-    // Fetch incident details to get last checklist
-    const res = await API.getMachineDetail(machine.machine_id);
-    const data = res.data || res;
-
     // Status color
     const sc = {GREEN:'var(--status-green)',RED:'var(--status-red)',AMBER:'var(--status-amber)',GREY:'var(--status-grey)'}[machine.current_status] || 'var(--status-grey)';
 
-    // Machine info
+    // Machine info card
     const infoHtml = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;font-size:12px">
         <div style="background:var(--surface-2);border-radius:6px;padding:10px">
@@ -874,8 +870,14 @@ async function viewLastTest(machineDataStr) {
       </div>
     `;
 
-    // Checklist from last submission
-    const checklistItems = data.last_checklist || [];
+    // Get checklist from incident details if incident exists, otherwise show CONFIG items
+    let checklistItems = [];
+    if (machine.active_incident_id) {
+      const incRes = await API.getIncidentDetails(machine.active_incident_id);
+      if (incRes && incRes.success) {
+        checklistItems = incRes.checklist_items || incRes.incident?.checklist_items || [];
+      }
+    }
     let checklistHtml = '';
 
     if (checklistItems.length > 0) {
