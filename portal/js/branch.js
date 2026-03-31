@@ -21,6 +21,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadBranches(null);
   }
 
+  // Check if viewing history
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('view') === 'history') {
+    loadSubmissionHistory();
+    return;
+  }
+
   // Set default inspection time
   const now = new Date();
   document.getElementById('inspection-time').value =
@@ -416,4 +423,115 @@ function resetForm() {
   document.getElementById('image-previews').innerHTML = '';
   selectedImages = [];
   selectedMachine = null;
+}
+
+
+// ─── My Submissions History ───────────────────────────────────────────────────
+async function loadSubmissionHistory() {
+  // Hide checklist UI, show history
+  const body = document.querySelector('.page-body');
+  if (!body) return;
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🕐 My Submissions</div>
+        <a href="branch.html" class="btn btn-secondary btn-sm">← Back to Checklist</a>
+      </div>
+      <div class="card-body" id="history-content">
+        <div class="section-loader"><div class="spinner"></div><p>Loading submissions...</p></div>
+      </div>
+    </div>
+  `;
+
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const histNav = document.querySelector('a[href="branch.html?view=history"]');
+  if (histNav) histNav.classList.add('active');
+
+  const session = Auth.getSession();
+  const container = document.getElementById('history-content');
+
+  try {
+    // Get snapshots from dashboard data via machines endpoint
+    const res = await API.getMachines(session.branch_id);
+    const machines = res.machines || [];
+
+    // Get incidents for this branch from manager dashboard
+    const dashRes = await API.getManagerDashboard({ branch_id: session.branch_id });
+    const allIncidents = dashRes.open_incidents || dashRes.active_incidents || [];
+
+    // Build submission history from Daily_Status_Snapshot via machines
+    const today = new Date().toISOString().slice(0, 10);
+
+    const rows = machines.map(m => {
+      const hasIncident = allIncidents.find(i => i.machine_id === m.machine_id);
+      const statusColor = {
+        GREEN: 'var(--status-green)',
+        RED:   'var(--status-red)',
+        AMBER: 'var(--status-amber)',
+        GREY:  'var(--status-grey)'
+      }[m.current_status] || 'var(--status-grey)';
+
+      return `
+        <tr>
+          <td class="mono">${m.terminal_id}</td>
+          <td>${m.location_description || m.machine_type}</td>
+          <td>${m.machine_type}</td>
+          <td>
+            <span style="font-weight:600;color:${statusColor}">
+              ${m.current_status || 'GREY'}
+            </span>
+          </td>
+          <td>
+            ${m.tested_today === 'TRUE' || m.tested_today === true
+              ? '<span style="color:var(--status-green);font-weight:600">✓ Yes</span>'
+              : '<span style="color:var(--status-grey)">— No</span>'
+            }
+          </td>
+          <td>${m.last_tested_at ? Common.fmtDateTime(m.last_tested_at) : '—'}</td>
+          <td>${hasIncident
+            ? `<span style="color:var(--status-red);font-weight:600">${hasIncident.incident_id}</span>`
+            : '<span style="color:var(--status-grey)">None</span>'
+          }</td>
+        </tr>`;
+    }).join('');
+
+    const testedCount = machines.filter(m => m.tested_today === 'TRUE' || m.tested_today === true).length;
+
+    container.innerHTML = `
+      <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+        <div class="kpi-card kpi-blue" style="flex:1;min-width:120px;padding:16px">
+          <div class="kpi-value">${machines.length}</div>
+          <div class="kpi-label">Total Machines</div>
+        </div>
+        <div class="kpi-card kpi-green" style="flex:1;min-width:120px;padding:16px">
+          <div class="kpi-value">${testedCount}</div>
+          <div class="kpi-label">Tested Today</div>
+        </div>
+        <div class="kpi-card kpi-grey" style="flex:1;min-width:120px;padding:16px">
+          <div class="kpi-value">${machines.length - testedCount}</div>
+          <div class="kpi-label">Pending</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Terminal ID</th>
+              <th>Location</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Tested Today</th>
+              <th>Last Tested</th>
+              <th>Active Incident</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No machines found</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  } catch(e) {
+    container.innerHTML = '<div class="alert alert-error">Failed to load submission history.</div>';
+  }
 }
