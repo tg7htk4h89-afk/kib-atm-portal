@@ -528,13 +528,21 @@ async function loadSubmissionHistory() {
           ? `<span style="color:var(--status-red);font-weight:600">${m.active_incident_id}</span>`
           : '<span style="color:var(--status-grey)">—</span>'}</td>
         <td>
-          <button onclick="retestFromHistory('${machineDataStr}')"
-            style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--brand-accent);
-                   color:var(--brand-accent);background:#fff;border-radius:6px;cursor:pointer;
-                   white-space:nowrap"
-            title="Retest this machine">
-            🔄 Retest
-          </button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button onclick="viewLastTest('${machineDataStr}')"
+              style="padding:5px 8px;font-size:13px;border:1px solid var(--border-mid);
+                     color:var(--text-secondary);background:#fff;border-radius:6px;cursor:pointer"
+              title="View last checklist">
+              👁
+            </button>
+            <button onclick="retestFromHistory('${machineDataStr}')"
+              style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--brand-accent);
+                     color:var(--brand-accent);background:#fff;border-radius:6px;cursor:pointer;
+                     white-space:nowrap"
+              title="Retest this machine">
+              🔄 Retest
+            </button>
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -786,4 +794,174 @@ async function retestFromHistory(machineDataStr) {
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
   Common.toast(`🔄 Retest: ${machine.terminal_id}`, 'warning');
+}
+
+// ─── View Last Checklist ──────────────────────────────────────────────────────
+function _ensureViewModal() {
+  if (document.getElementById('view-test-modal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'view-test-modal';
+  modal.style.cssText = `
+    display:none;position:fixed;inset:0;z-index:1000;
+    background:rgba(0,0,0,0.5);align-items:center;justify-content:center;padding:16px
+  `;
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;width:100%;max-width:600px;
+                max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff">
+        <div>
+          <div style="font-weight:700;font-size:15px" id="vtm-title">Last Checklist</div>
+          <div style="font-size:12px;color:var(--text-muted)" id="vtm-subtitle"></div>
+        </div>
+        <button onclick="document.getElementById('view-test-modal').style.display='none'"
+          style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">✕</button>
+      </div>
+      <div id="vtm-body" style="padding:20px"></div>
+    </div>
+  `;
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+  document.body.appendChild(modal);
+}
+
+async function viewLastTest(machineDataStr) {
+  _ensureViewModal();
+  let machine;
+  try { machine = JSON.parse(decodeURIComponent(machineDataStr)); }
+  catch(e) { Common.toast('Error loading machine data.', 'error'); return; }
+
+  const modal = document.getElementById('view-test-modal');
+  const body  = document.getElementById('vtm-body');
+  const title = document.getElementById('vtm-title');
+  const sub   = document.getElementById('vtm-subtitle');
+
+  title.textContent = `Last Test — ${machine.terminal_id}`;
+  sub.textContent   = machine.location_description || machine.machine_type;
+  body.innerHTML    = '<div style="text-align:center;padding:32px;color:var(--text-muted)"><div class="spinner" style="margin:0 auto 12px"></div><p>Loading...</p></div>';
+  modal.style.display = 'flex';
+
+  try {
+    // Fetch incident details to get last checklist
+    const res = await API.getMachineDetail(machine.machine_id);
+    const data = res.data || res;
+
+    // Status color
+    const sc = {GREEN:'var(--status-green)',RED:'var(--status-red)',AMBER:'var(--status-amber)',GREY:'var(--status-grey)'}[machine.current_status] || 'var(--status-grey)';
+
+    // Machine info
+    const infoHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;font-size:12px">
+        <div style="background:var(--surface-2);border-radius:6px;padding:10px">
+          <div style="color:var(--text-muted);margin-bottom:2px">Status</div>
+          <div style="font-weight:700;color:${sc}">${machine.current_status || 'GREY'}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:6px;padding:10px">
+          <div style="color:var(--text-muted);margin-bottom:2px">Last Tested</div>
+          <div style="font-weight:600">${machine.last_tested_at ? Common.fmtDateTime(machine.last_tested_at) : '—'}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:6px;padding:10px">
+          <div style="color:var(--text-muted);margin-bottom:2px">Type</div>
+          <div style="font-weight:600">${machine.machine_type}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:6px;padding:10px">
+          <div style="color:var(--text-muted);margin-bottom:2px">Active Incident</div>
+          <div style="font-weight:600;color:${machine.active_incident_id ? 'var(--status-red)' : 'var(--text-muted)'}">
+            ${machine.active_incident_id || '— None'}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Checklist from last submission
+    const checklistItems = data.last_checklist || [];
+    let checklistHtml = '';
+
+    if (checklistItems.length > 0) {
+      const resultColors = {Pass:'var(--status-green)', Fail:'var(--status-red)', 'N/A':'var(--status-grey)'};
+      const resultBg     = {Pass:'#f0fdf4', Fail:'#fef2f2', 'N/A':'#f9fafb'};
+      const resultIcons  = {Pass:'✓', Fail:'✗', 'N/A':'—'};
+
+      // Group by category
+      const grouped = {};
+      checklistItems.forEach(item => {
+        const cat = item.category || 'General';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
+      });
+
+      checklistHtml = Object.entries(grouped).map(([cat, items]) => `
+        <div style="margin-bottom:16px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
+                      color:var(--text-muted);margin-bottom:8px">${cat}</div>
+          ${items.map(item => `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                        padding:8px 10px;border-radius:6px;margin-bottom:4px;
+                        background:${resultBg[item.result] || '#f9fafb'}">
+              <div style="flex:1">
+                <span style="font-size:12px;font-weight:500">${item.item_name}</span>
+                ${item.is_critical === 'TRUE' || item.is_critical === true
+                  ? '<span style="font-size:9px;background:#fef2f2;color:var(--status-red);padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:700">CRITICAL</span>'
+                  : ''}
+                ${item.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">📝 ${item.notes}</div>` : ''}
+              </div>
+              <span style="font-weight:700;font-size:12px;color:${resultColors[item.result] || 'var(--text-muted)'};
+                           min-width:32px;text-align:right">
+                ${resultIcons[item.result] || item.result}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    } else {
+      // No checklist data — show items from CONFIG as not tested
+      checklistHtml = `
+        <div style="text-align:center;padding:24px;color:var(--text-muted)">
+          <div style="font-size:32px;margin-bottom:8px">📋</div>
+          <div style="font-weight:600">Not tested yet today</div>
+          <div style="font-size:12px;margin-top:4px">No checklist submission found for this machine</div>
+        </div>
+        <div style="margin-top:16px">
+          ${Object.values(CONFIG.CHECKLIST_SECTIONS).map(section =>
+            section.items.map(item => `
+              <div style="display:flex;justify-content:space-between;padding:7px 10px;
+                          border-radius:6px;background:#f9fafb;margin-bottom:4px">
+                <span style="font-size:12px;color:var(--text-muted)">${item.name}
+                  ${item.critical ? '<span style="font-size:9px;color:var(--status-red);margin-left:4px">CRITICAL</span>' : ''}</span>
+                <span style="font-size:12px;color:var(--text-muted)">— Pending</span>
+              </div>`
+            ).join('')
+          ).join('')}
+        </div>
+      `;
+    }
+
+    body.innerHTML = infoHtml + `
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-primary)">
+        📋 Checklist Items
+      </div>
+      ${checklistHtml}
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('view-test-modal').style.display='none'"
+          class="btn btn-secondary btn-sm">Close</button>
+        <button onclick="document.getElementById('view-test-modal').style.display='none'; retestFromHistory('${machineDataStr}')"
+          style="padding:8px 16px;font-size:12px;font-weight:600;border:1px solid var(--brand-accent);
+                 color:var(--brand-accent);background:#fff;border-radius:6px;cursor:pointer">
+          🔄 Retest This Machine
+        </button>
+      </div>
+    `;
+  } catch(e) {
+    body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted)">
+      <div style="font-size:32px">⚠️</div>
+      <div>Could not load checklist details</div>
+      <button onclick="document.getElementById('view-test-modal').style.display='none';retestFromHistory('${machineDataStr}')"
+        style="margin-top:12px;padding:8px 16px;font-size:12px;font-weight:600;
+               border:1px solid var(--brand-accent);color:var(--brand-accent);
+               background:#fff;border-radius:6px;cursor:pointer">
+        🔄 Retest Anyway
+      </button>
+    </div>`;
+  }
 }
