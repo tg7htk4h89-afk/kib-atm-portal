@@ -508,6 +508,13 @@ async function loadSubmissionHistory() {
     const rows = machines.map(m => {
       const sc = statusColor[m.current_status] || statusColor.GREY;
       const tested = m.tested_today === 'TRUE' || m.tested_today === true;
+      const machineDataStr = encodeURIComponent(JSON.stringify({
+        machine_id: m.machine_id, terminal_id: m.terminal_id,
+        machine_type: m.machine_type, location_description: m.location_description,
+        branch_name: m.branch_name, branch_id: m.branch_id,
+        current_status: m.current_status, last_tested_at: m.last_tested_at,
+        active_incident_id: m.active_incident_id || ''
+      }));
       return `<tr>
         <td class="mono" style="font-weight:600">${m.terminal_id}</td>
         <td>${m.location_description || '—'}</td>
@@ -520,6 +527,15 @@ async function loadSubmissionHistory() {
         <td>${m.active_incident_id
           ? `<span style="color:var(--status-red);font-weight:600">${m.active_incident_id}</span>`
           : '<span style="color:var(--status-grey)">—</span>'}</td>
+        <td>
+          <button onclick="retestFromHistory('${machineDataStr}')"
+            style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--brand-accent);
+                   color:var(--brand-accent);background:#fff;border-radius:6px;cursor:pointer;
+                   white-space:nowrap"
+            title="Retest this machine">
+            🔄 Retest
+          </button>
+        </td>
       </tr>`;
     }).join('');
 
@@ -627,4 +643,147 @@ async function startRetest(machineId, incidentId) {
   // Scroll to checklist
   formWrap.scrollIntoView({ behavior: 'smooth' });
   Common.toast('🔄 Retest mode — check all items and submit.', 'warning');
+}
+
+// ─── Retest from History Page ─────────────────────────────────────────────────
+async function retestFromHistory(machineDataStr) {
+  let machine;
+  try {
+    machine = JSON.parse(decodeURIComponent(machineDataStr));
+  } catch(e) {
+    Common.toast('Error loading machine data.', 'error');
+    return;
+  }
+
+  // Navigate to checklist view
+  window.history.pushState({}, '', 'branch.html');
+  
+  // Rebuild the checklist page structure
+  const pageHeader = document.querySelector('.page-header h1');
+  if (pageHeader) pageHeader.textContent = 'Daily Machine Checklist';
+
+  const body = document.querySelector('.page-body');
+  if (!body) return;
+
+  // Restore original page structure
+  body.innerHTML = `
+    <div class="machine-selector-card" id="machine-selector">
+      <h2>Select Machine to Inspect</h2>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label required">Branch</label>
+          <div class="form-control" style="background:#f8fafc;color:var(--text-primary);font-weight:600;cursor:default">
+            ${machine.branch_name || machine.branch_id}
+          </div>
+          <input type="hidden" id="branch-select" value="${machine.branch_id}">
+        </div>
+        <div class="form-group">
+          <label class="form-label required">ATM / ITM Machine</label>
+          <div class="form-control" style="background:#f8fafc;color:var(--text-primary);font-weight:600;cursor:default">
+            ${machine.location_description || machine.machine_type} (${machine.terminal_id})
+          </div>
+          <input type="hidden" id="machine-select" value="${machine.machine_id}">
+        </div>
+      </div>
+      <div id="machine-info-strip" class="machine-info-strip">
+        <div class="machine-info-item">
+          <span class="machine-info-label">Terminal ID</span>
+          <span class="machine-info-value" id="info-terminal-id">${machine.terminal_id}</span>
+        </div>
+        <div class="machine-info-item">
+          <span class="machine-info-label">Type</span>
+          <span class="machine-info-value" id="info-machine-type">${machine.machine_type}</span>
+        </div>
+        <div class="machine-info-item">
+          <span class="machine-info-label">Location</span>
+          <span class="machine-info-value" id="info-location">${machine.location_description || '—'}</span>
+        </div>
+        <div class="machine-info-item">
+          <span class="machine-info-label">Last Tested</span>
+          <span class="machine-info-value" id="info-last-tested">${machine.last_tested_at ? Common.fmtDateTime(machine.last_tested_at) : 'Never'}</span>
+        </div>
+        <div class="machine-info-item">
+          <span class="machine-info-label">Current Status</span>
+          <span id="info-status">${Common.statusBadge ? Common.statusBadge(machine.current_status) : machine.current_status}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert-success hidden" id="success-alert">
+      <strong>✓ Checklist submitted successfully.</strong>&nbsp;
+      <span id="success-detail"></span>
+    </div>
+
+    <div id="checklist-form-wrap">
+      ${machine.active_incident_id ? `
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px">🔄</span>
+        <div>
+          <strong>Retest Mode</strong> — Confirming fix for incident 
+          <strong>${machine.active_incident_id}</strong> on 
+          <strong>${machine.terminal_id}</strong>.
+          Submit all Pass to confirm the machine is healthy.
+        </div>
+      </div>` : ''}
+
+      <div class="card mb-5">
+        <div class="card-body">
+          <div class="grid-2">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label required">Time of Inspection</label>
+              <input type="time" class="form-control" id="inspection-time" />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label">Inspector Name</label>
+              <input type="text" class="form-control" id="inspector-name" placeholder="Your full name" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="checklist-sections"></div>
+
+      <div class="card mb-5">
+        <div class="card-header"><div class="card-title">📎 Additional Information</div></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">General Comments</label>
+            <textarea class="form-control" id="general-comments" rows="3" placeholder="Any additional observations or comments..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="submit-panel">
+        <div class="submit-summary">
+          <span id="fail-count-display"></span>
+          <span id="critical-fail-display" style="color:var(--status-red);font-weight:700;"></span>
+        </div>
+        <div class="flex gap-3">
+          <button class="btn btn-secondary" onclick="window.location.href='branch.html?view=history'">← Back</button>
+          <button class="btn btn-primary btn-lg" id="submit-btn" onclick="submitChecklist()">Submit Checklist</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Set machine and render checklist
+  selectedMachine = machine;
+  _renderChecklist();
+
+  // Set time and name
+  const session = Auth.getSession();
+  const now = new Date();
+  const timeEl = document.getElementById('inspection-time');
+  if (timeEl) timeEl.value = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const nameEl = document.getElementById('inspector-name');
+  if (nameEl) nameEl.value = session.full_name || '';
+
+  // Update nav
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const checkNav = document.querySelector('a[href="branch.html"]');
+  if (checkNav) checkNav.classList.add('active');
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  Common.toast(`🔄 Retest: ${machine.terminal_id}`, 'warning');
 }
