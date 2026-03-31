@@ -47,23 +47,53 @@ function _updateClock() {
 }
 
 async function loadBranches(preselect) {
-  const res = await API.getMachines(); // Get all branches list from machines response
+  const res = await API.getMachines();
   const session = Auth.getSession();
   const branchSelect = document.getElementById('branch-select');
 
-  if (res.success) {
-    const branches = res.branches || res.data?.branches || [];
-    Common.setSelectOptions('branch-select', branches.map(b => ({ value: b.branch_id, label: b.branch_name })), '— Select Branch —');
+  if (!res.success) return;
 
-    if (preselect || (session.role === 'branch_user' && session.branch_id)) {
-      branchSelect.value = preselect || session.branch_id;
-      await onBranchChange();
+  const branches = res.branches || res.data?.branches || [];
+  const isBranchUser = session.role === 'branch_user';
+  const assignedBranch = preselect || session.branch_id;
+
+  if (isBranchUser && assignedBranch) {
+    // Branch user — lock to their branch, no dropdown needed
+    const userBranch = branches.find(b => b.branch_id === assignedBranch);
+    const branchName = userBranch ? userBranch.branch_name : assignedBranch;
+
+    // Replace dropdown with a locked label
+    const branchGroup = branchSelect.closest('.form-group');
+    if (branchGroup) {
+      branchGroup.innerHTML = `
+        <label class="form-label required">Branch</label>
+        <div class="form-control" style="background:#f8fafc;color:var(--text-primary);font-weight:600;cursor:default">
+          ${branchName}
+        </div>
+        <input type="hidden" id="branch-select" value="${assignedBranch}">
+      `;
+    } else {
+      // Fallback: just set value
+      Common.setSelectOptions('branch-select', [{value: assignedBranch, label: branchName}]);
+      branchSelect.value = assignedBranch;
+      branchSelect.disabled = true;
+    }
+
+    // Auto-load machines for their branch
+    await onBranchChange(assignedBranch);
+
+  } else {
+    // Manager — show all branches dropdown
+    Common.setSelectOptions('branch-select', branches.map(b => ({ value: b.branch_id, label: b.branch_name })), '— Select Branch —');
+    if (assignedBranch) {
+      branchSelect.value = assignedBranch;
+      await onBranchChange(assignedBranch);
     }
   }
 }
 
-async function onBranchChange() {
-  const branchId = document.getElementById('branch-select').value;
+async function onBranchChange(forceBranchId) {
+  const branchId = forceBranchId || document.getElementById('branch-select').value;
   const machineSelect = document.getElementById('machine-select');
 
   if (!branchId) {
