@@ -6,7 +6,7 @@ let selectedImages = [];
 let selectedMachine = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['branch_user', 'atm_manager'])) return;
+  if (!Auth.requireAuth(['branch_user', 'atm_manager', 'manager'])) return;
   Common.bindLogout();
   Common.injectNavUser();
   _updateClock();
@@ -14,35 +14,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const session = Auth.getSession();
 
-  // Pre-populate branch for branch users
+  // ── Check view mode FIRST ──────────────────────────────────
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('view') === 'history') {
+    await loadSubmissionHistory();
+    return;
+  }
+
+  // ── Normal checklist view ──────────────────────────────────
   if (session.role === 'branch_user' && session.branch_id) {
     await loadBranches(session.branch_id);
   } else {
     await loadBranches(null);
   }
 
-  // Check if viewing history
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('view') === 'history') {
-    loadSubmissionHistory();
-    return;
-  }
-
   // Set default inspection time
   const now = new Date();
-  document.getElementById('inspection-time').value =
-    now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  document.getElementById('inspector-name').value = session.full_name || '';
+  const timeEl = document.getElementById('inspection-time');
+  if (timeEl) timeEl.value = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const nameEl = document.getElementById('inspector-name');
+  if (nameEl) nameEl.value = session.full_name || '';
 
   // Drag-and-drop on upload zone
   const zone = document.getElementById('upload-zone');
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-    handleImageSelect({ target: { files: e.dataTransfer.files } });
-  });
+  if (zone) {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      handleImageSelect({ target: { files: e.dataTransfer.files } });
+    });
+  }
 });
 
 function _updateClock() {
@@ -428,110 +431,107 @@ function resetForm() {
 
 // ─── My Submissions History ───────────────────────────────────────────────────
 async function loadSubmissionHistory() {
-  // Hide checklist UI, show history
+  const session = Auth.getSession();
+
+  // Update page title and nav
+  const pageHeader = document.querySelector('.page-header h1');
+  if (pageHeader) pageHeader.textContent = 'My Submissions';
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const histNav = document.querySelector('a[href="branch.html?view=history"]');
+  if (histNav) histNav.classList.add('active');
+  const checkNav = document.querySelector('a[href="branch.html"]');
+  if (checkNav) checkNav.classList.remove('active');
+
+  // Replace page body
   const body = document.querySelector('.page-body');
   if (!body) return;
 
   body.innerHTML = `
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">🕐 My Submissions</div>
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <div class="card-title">🕐 Today's Machine Status — ${session.full_name || ''}</div>
         <a href="branch.html" class="btn btn-secondary btn-sm">← Back to Checklist</a>
       </div>
       <div class="card-body" id="history-content">
-        <div class="section-loader"><div class="spinner"></div><p>Loading submissions...</p></div>
+        <div style="text-align:center;padding:40px;color:var(--text-muted)">
+          <div class="spinner" style="margin:0 auto 12px"></div>
+          <p>Loading machines...</p>
+        </div>
       </div>
     </div>
   `;
 
-  // Update nav active state
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const histNav = document.querySelector('a[href="branch.html?view=history"]');
-  if (histNav) histNav.classList.add('active');
-
-  const session = Auth.getSession();
   const container = document.getElementById('history-content');
 
   try {
-    // Get snapshots from dashboard data via machines endpoint
-    const res = await API.getMachines(session.branch_id);
+    const branchId = session.branch_id;
+    const res = await API.getMachines(branchId);
+
+    if (!res.success) {
+      container.innerHTML = '<div class="alert alert-error">Failed to load machine data.</div>';
+      return;
+    }
+
     const machines = res.machines || [];
+    const testedCount = machines.filter(m => m.tested_today === 'TRUE' || m.tested_today === true).length;
+    const redCount    = machines.filter(m => m.current_status === 'RED').length;
+    const greenCount  = machines.filter(m => m.current_status === 'GREEN').length;
 
-    // Get incidents for this branch from manager dashboard
-    const dashRes = await API.getManagerDashboard({ branch_id: session.branch_id });
-    const allIncidents = dashRes.open_incidents || dashRes.active_incidents || [];
-
-    // Build submission history from Daily_Status_Snapshot via machines
-    const today = new Date().toISOString().slice(0, 10);
+    const statusColor = { GREEN:'var(--status-green)', RED:'var(--status-red)', AMBER:'var(--status-amber)', GREY:'var(--status-grey)' };
 
     const rows = machines.map(m => {
-      const hasIncident = allIncidents.find(i => i.machine_id === m.machine_id);
-      const statusColor = {
-        GREEN: 'var(--status-green)',
-        RED:   'var(--status-red)',
-        AMBER: 'var(--status-amber)',
-        GREY:  'var(--status-grey)'
-      }[m.current_status] || 'var(--status-grey)';
-
-      return `
-        <tr>
-          <td class="mono">${m.terminal_id}</td>
-          <td>${m.location_description || m.machine_type}</td>
-          <td>${m.machine_type}</td>
-          <td>
-            <span style="font-weight:600;color:${statusColor}">
-              ${m.current_status || 'GREY'}
-            </span>
-          </td>
-          <td>
-            ${m.tested_today === 'TRUE' || m.tested_today === true
-              ? '<span style="color:var(--status-green);font-weight:600">✓ Yes</span>'
-              : '<span style="color:var(--status-grey)">— No</span>'
-            }
-          </td>
-          <td>${m.last_tested_at ? Common.fmtDateTime(m.last_tested_at) : '—'}</td>
-          <td>${hasIncident
-            ? `<span style="color:var(--status-red);font-weight:600">${hasIncident.incident_id}</span>`
-            : '<span style="color:var(--status-grey)">None</span>'
-          }</td>
-        </tr>`;
+      const sc = statusColor[m.current_status] || statusColor.GREY;
+      const tested = m.tested_today === 'TRUE' || m.tested_today === true;
+      return `<tr>
+        <td class="mono" style="font-weight:600">${m.terminal_id}</td>
+        <td>${m.location_description || '—'}</td>
+        <td><span style="font-weight:600">${m.machine_type}</span></td>
+        <td><span style="font-weight:700;color:${sc}">${m.current_status || 'GREY'}</span></td>
+        <td style="text-align:center">${tested
+          ? '<span style="color:var(--status-green);font-weight:700">✓ Yes</span>'
+          : '<span style="color:var(--status-grey)">— No</span>'}</td>
+        <td>${m.last_tested_at ? Common.fmtDateTime(m.last_tested_at) : '—'}</td>
+        <td>${m.active_incident_id
+          ? `<span style="color:var(--status-red);font-weight:600">${m.active_incident_id}</span>`
+          : '<span style="color:var(--status-grey)">—</span>'}</td>
+      </tr>`;
     }).join('');
 
-    const testedCount = machines.filter(m => m.tested_today === 'TRUE' || m.tested_today === true).length;
-
     container.innerHTML = `
-      <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
-        <div class="kpi-card kpi-blue" style="flex:1;min-width:120px;padding:16px">
-          <div class="kpi-value">${machines.length}</div>
-          <div class="kpi-label">Total Machines</div>
+      <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+        <div style="flex:1;min-width:100px;background:var(--surface-2);border-radius:8px;padding:16px;text-align:center;border:1px solid var(--border)">
+          <div style="font-size:28px;font-weight:700;color:var(--brand-accent)">${machines.length}</div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px">Total</div>
         </div>
-        <div class="kpi-card kpi-green" style="flex:1;min-width:120px;padding:16px">
-          <div class="kpi-value">${testedCount}</div>
-          <div class="kpi-label">Tested Today</div>
+        <div style="flex:1;min-width:100px;background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;border:1px solid #86efac">
+          <div style="font-size:28px;font-weight:700;color:var(--status-green)">${testedCount}</div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px">Tested Today</div>
         </div>
-        <div class="kpi-card kpi-grey" style="flex:1;min-width:120px;padding:16px">
-          <div class="kpi-value">${machines.length - testedCount}</div>
-          <div class="kpi-label">Pending</div>
+        <div style="flex:1;min-width:100px;background:#f9fafb;border-radius:8px;padding:16px;text-align:center;border:1px solid var(--border)">
+          <div style="font-size:28px;font-weight:700;color:var(--status-grey)">${machines.length - testedCount}</div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px">Pending</div>
         </div>
+        ${redCount > 0 ? `
+        <div style="flex:1;min-width:100px;background:#fef2f2;border-radius:8px;padding:16px;text-align:center;border:1px solid #fca5a5">
+          <div style="font-size:28px;font-weight:700;color:var(--status-red)">${redCount}</div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px">Critical</div>
+        </div>` : ''}
       </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Terminal ID</th>
-              <th>Location</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Tested Today</th>
-              <th>Last Tested</th>
-              <th>Active Incident</th>
+              <th>Terminal ID</th><th>Location</th><th>Type</th>
+              <th>Status</th><th style="text-align:center">Tested Today</th>
+              <th>Last Tested</th><th>Active Incident</th>
             </tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No machines found</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">No machines found</td></tr>'}</tbody>
         </table>
       </div>
     `;
   } catch(e) {
-    container.innerHTML = '<div class="alert alert-error">Failed to load submission history.</div>';
+    container.innerHTML = `<div class="alert alert-error">Error loading data: ${e.message}</div>`;
   }
 }
