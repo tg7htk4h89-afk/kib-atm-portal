@@ -387,26 +387,51 @@ async function submitChecklist() {
   if (res.success) {
     const status = res.machine_status || res.data?.machine_status || 'GREEN';
     const incidentId = res.incident_id || res.data?.incident_id || null;
+    const retestMachine = selectedMachine; // save before clearing
 
     const alertEl = document.getElementById('success-alert');
     const detailEl = document.getElementById('success-detail');
 
-    let detail = `Machine status: <strong>${status}</strong>.`;
+    const isHealthy = status === 'GREEN';
+    const hadPrevIncident = retestMachine?.active_incident_id;
+
+    let detail = `Machine status: <strong style="color:${isHealthy ? 'var(--status-green)' : 'var(--status-red)'}">${status}</strong>.`;
+
     if (incidentId) {
-      detail += ` Incident <strong>${incidentId}</strong> has been created and assigned.`;
+      detail += ` Incident <strong>${incidentId}</strong> created and assigned to vendor.`;
+    } else if (isHealthy && hadPrevIncident) {
+      detail += ` ✅ Previous incident <strong>${hadPrevIncident}</strong> — machine confirmed healthy.`;
     }
-    detailEl.innerHTML = detail;
+
+    // Show Retest button if machine had active incident and now passes
+    const retestBtn = isHealthy && hadPrevIncident
+      ? `<button class="btn btn-secondary btn-sm" style="margin-left:12px"
+           onclick="startRetest('${retestMachine.machine_id}', '${hadPrevIncident}')">
+           🔄 Retest Again
+         </button>`
+      : '';
+
+    detailEl.innerHTML = `
+      <div>${detail}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="#" onclick="resetForm(); return false;"
+           class="btn btn-primary btn-sm">📋 New Checklist</a>
+        ${retestBtn}
+        <a href="branch.html?view=history" class="btn btn-secondary btn-sm">🕐 View History</a>
+      </div>
+    `;
+
     alertEl.classList.remove('hidden');
+    alertEl.style.background = isHealthy ? '#f0fdf4' : '#fef2f2';
+    alertEl.style.borderColor = isHealthy ? '#86efac' : '#fca5a5';
 
     document.getElementById('checklist-form-wrap').classList.add('hidden');
     document.getElementById('machine-info-strip').classList.add('hidden');
     document.getElementById('machine-select').value = '';
 
     Common.toast(
-      status === 'RED' || status === 'AMBER'
-        ? 'Checklist submitted — Incident created.'
-        : 'Checklist submitted — Machine is healthy.',
-      status === 'GREEN' ? 'success' : 'warning'
+      isHealthy ? '✅ Machine confirmed healthy!' : '⚠️ Checklist submitted — Incident created.',
+      isHealthy ? 'success' : 'warning'
     );
 
     selectedImages = [];
@@ -534,4 +559,72 @@ async function loadSubmissionHistory() {
   } catch(e) {
     container.innerHTML = `<div class="alert alert-error">Error loading data: ${e.message}</div>`;
   }
+}
+
+// ─── Retest Machine ───────────────────────────────────────────────────────────
+async function startRetest(machineId, incidentId) {
+  // Reset form and pre-select the machine for retest
+  resetForm();
+
+  Common.toast('🔄 Loading machine for retest...', 'info');
+
+  const session = Auth.getSession();
+  const branchId = session.branch_id || document.getElementById('branch-select').value;
+
+  // Load machines for branch
+  const res = await API.getMachines(branchId);
+  if (!res.success) {
+    Common.toast('Failed to load machines.', 'error');
+    return;
+  }
+
+  const machines = res.machines || [];
+  const machine = machines.find(m => m.machine_id === machineId);
+
+  if (!machine) {
+    Common.toast('Machine not found.', 'error');
+    return;
+  }
+
+  // Set machine select
+  Common.setSelectOptions('machine-select',
+    machines.map(m => ({ value: m.machine_id, label: `${m.location_description || m.machine_type} (${m.terminal_id})` })),
+    '— Select Machine —'
+  );
+
+  const machineSelect = document.getElementById('machine-select');
+  machineSelect.value = machineId;
+  machineSelect.disabled = false;
+
+  // Load checklist for this machine
+  selectedMachine = machine;
+  _populateMachineInfo(machine);
+  _renderChecklist();
+
+  // Add retest banner
+  const retestBanner = document.createElement('div');
+  retestBanner.id = 'retest-banner';
+  retestBanner.style.cssText = 'background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:8px';
+  retestBanner.innerHTML = `
+    <span style="font-size:18px">🔄</span>
+    <div>
+      <strong>Retest Mode</strong> — Confirming fix for incident <strong>${incidentId}</strong>
+      on machine <strong>${machine.terminal_id}</strong>.
+      Submit all Pass to confirm the machine is healthy.
+    </div>
+  `;
+  const formWrap = document.getElementById('checklist-form-wrap');
+  formWrap.insertBefore(retestBanner, formWrap.firstChild);
+
+  document.getElementById('machine-info-strip').classList.remove('hidden');
+  formWrap.classList.remove('hidden');
+
+  // Set inspection time
+  const now = new Date();
+  const timeEl = document.getElementById('inspection-time');
+  if (timeEl) timeEl.value = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+
+  // Scroll to checklist
+  formWrap.scrollIntoView({ behavior: 'smooth' });
+  Common.toast('🔄 Retest mode — check all items and submit.', 'warning');
 }
