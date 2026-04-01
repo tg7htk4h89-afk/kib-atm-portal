@@ -870,13 +870,16 @@ async function viewLastTest(machineDataStr) {
       </div>
     `;
 
-    // Get checklist from incident details if incident exists, otherwise show CONFIG items
+    // Get checklist items - try multiple sources
     let checklistItems = [];
     if (machine.active_incident_id) {
-      const incRes = await API.getIncidentDetails(machine.active_incident_id);
-      if (incRes && incRes.success) {
-        checklistItems = incRes.checklist_items || incRes.incident?.checklist_items || [];
-      }
+      try {
+        const incRes = await API.getIncidentDetails(machine.active_incident_id);
+        if (incRes && incRes.success) {
+          const inc = incRes.incident || incRes.data || incRes;
+          checklistItems = inc.checklist_items || inc.checklist || [];
+        }
+      } catch(e) { checklistItems = []; }
     }
     let checklistHtml = '';
 
@@ -917,21 +920,32 @@ async function viewLastTest(machineDataStr) {
         </div>
       `).join('');
     } else {
-      // No checklist data — show items from CONFIG as not tested
+      // No checklist data saved yet — show checklist template ready to fill
+      const hasIncident = !!machine.active_incident_id;
       checklistHtml = `
-        <div style="text-align:center;padding:24px;color:var(--text-muted)">
-          <div style="font-size:32px;margin-bottom:8px">📋</div>
-          <div style="font-weight:600">Not tested yet today</div>
-          <div style="font-size:12px;margin-top:4px">No checklist submission found for this machine</div>
+        <div style="text-align:center;padding:16px 24px;background:${hasIncident ? '#fffbeb' : '#f9fafb'};
+                    border-radius:8px;margin-bottom:16px;border:1px solid ${hasIncident ? '#fcd34d' : 'var(--border)'}">
+          <div style="font-size:24px;margin-bottom:6px">${hasIncident ? '⚠️' : '📋'}</div>
+          <div style="font-weight:600;font-size:13px">
+            ${hasIncident
+              ? 'Checklist data not available for this incident'
+              : 'No submission yet today'}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+            ${hasIncident
+              ? 'Submit a new retest to record checklist results'
+              : 'Click Retest to submit checklist for this machine'}
+          </div>
         </div>
-        <div style="margin-top:16px">
+        <div>
           ${Object.values(CONFIG.CHECKLIST_SECTIONS).map(section =>
             section.items.map(item => `
               <div style="display:flex;justify-content:space-between;padding:7px 10px;
-                          border-radius:6px;background:#f9fafb;margin-bottom:4px">
-                <span style="font-size:12px;color:var(--text-muted)">${item.name}
-                  ${item.critical ? '<span style="font-size:9px;color:var(--status-red);margin-left:4px">CRITICAL</span>' : ''}</span>
-                <span style="font-size:12px;color:var(--text-muted)">— Pending</span>
+                          border-radius:6px;background:#f9fafb;margin-bottom:4px;
+                          border:1px solid var(--border)">
+                <span style="font-size:12px;color:var(--text-secondary)">${item.name}
+                  ${item.critical ? '<span style="font-size:9px;color:var(--status-red);font-weight:700;margin-left:4px">CRITICAL</span>' : ''}</span>
+                <span style="font-size:11px;color:var(--text-muted);font-style:italic">— awaiting test</span>
               </div>`
             ).join('')
           ).join('')}
