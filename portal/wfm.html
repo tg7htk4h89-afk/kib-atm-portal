@@ -54,57 +54,6 @@ body { font-family:var(--font); background:var(--off-white); color:var(--text); 
 ::-webkit-scrollbar-thumb{background:var(--border-mid);border-radius:3px}
 
 /* ══════════════════════════════════
-   LOGIN PAGE
-══════════════════════════════════ */
-#login-page {
-  min-height:100vh; display:flex; background:var(--off-white);
-}
-.login-brand {
-  width:420px; background:var(--navy); display:flex; flex-direction:column;
-  justify-content:space-between; padding:48px; position:relative; overflow:hidden; flex-shrink:0;
-}
-.login-brand::before {
-  content:''; position:absolute; top:-80px; right:-80px; width:300px; height:300px;
-  background:radial-gradient(circle,rgba(29,111,187,0.3) 0%,transparent 70%); border-radius:50%;
-}
-.login-brand::after {
-  content:''; position:absolute; bottom:-60px; left:-60px; width:240px; height:240px;
-  background:radial-gradient(circle,rgba(184,134,11,0.15) 0%,transparent 70%); border-radius:50%;
-}
-.brand-top{position:relative;z-index:1}
-.brand-logo{display:flex;align-items:center;gap:12px;margin-bottom:40px}
-.brand-icon{width:44px;height:44px;background:var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
-.brand-name{font-size:16px;font-weight:700;color:#fff}
-.brand-sub{font-size:10px;color:rgba(255,255,255,0.4);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px}
-.brand-headline{font-size:26px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:16px}
-.brand-headline span{color:var(--gold-light)}
-.brand-desc{font-size:13px;color:rgba(255,255,255,0.5);line-height:1.6}
-.brand-features{margin-top:28px;display:flex;flex-direction:column;gap:8px}
-.brand-feature{display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.55)}
-.brand-feature::before{content:'✓';width:18px;height:18px;background:rgba(22,163,74,0.2);color:#86efac;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
-.brand-bottom{position:relative;z-index:1;font-size:10px;color:rgba(255,255,255,0.2);font-family:var(--mono)}
-.login-form-panel{flex:1;display:flex;align-items:center;justify-content:center;padding:48px 40px}
-.login-box{width:100%;max-width:380px}
-.login-box h2{font-size:22px;font-weight:700;margin-bottom:4px}
-.login-sub{font-size:13px;color:var(--text-sec);margin-bottom:28px}
-.form-field{margin-bottom:18px}
-.form-field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.7px;color:var(--text-sec);margin-bottom:6px}
-.form-field input,.form-field select{width:100%;padding:10px 14px;border:1.5px solid var(--border-mid);border-radius:6px;font-size:14px;font-family:var(--font);color:var(--text);outline:none;transition:border-color 0.15s,box-shadow 0.15s;background:#fff}
-.form-field input:focus,.form-field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,111,187,0.1)}
-.error-msg{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:6px;padding:10px 14px;font-size:12px;margin-bottom:16px;display:none}
-.error-msg.visible{display:flex;align-items:center;gap:8px}
-.submit-btn{width:100%;padding:12px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;transition:background 0.15s;margin-top:4px}
-.submit-btn:hover{background:var(--navy-mid)}
-.demo-creds{margin-top:20px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
-.demo-creds h4{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px}
-.demo-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:11px;border-bottom:1px solid var(--border);cursor:pointer}
-.demo-row:last-child{border-bottom:none}
-.demo-row:hover{background:rgba(29,111,187,0.05);border-radius:4px;padding-left:4px}
-.demo-role{font-weight:600;color:var(--text);font-size:11px}
-.demo-user{color:var(--text-sec);font-family:var(--mono);font-size:10px}
-.demo-use{font-size:10px;color:var(--accent);font-weight:600}
-
-/* ══════════════════════════════════
    APP LAYOUT
 ══════════════════════════════════ */
 #app{display:none;min-height:100vh}
@@ -390,77 +339,9 @@ textarea.form-control{resize:vertical;min-height:80px}
 <body>
 
 <!-- ═══════════════════════════════════════════════
-     LOGIN PAGE
-═══════════════════════════════════════════════ -->
-<div id="login-page">
-  <div class="login-brand">
-    <div class="brand-top">
-      <div class="brand-logo">
-        <div class="brand-icon">👥</div>
-        <div><div class="brand-name">KIB WFM Portal</div><div class="brand-sub">Branch Operations</div></div>
-      </div>
-      <div class="brand-headline">Smart workforce,<br><span>fair coverage,</span><br>zero compromise.</div>
-      <div class="brand-desc">Manage branch coverage, leave planning, and replacement selection with full fairness and neutrality.</div>
-      <div class="brand-features">
-        <div class="brand-feature">Neutral replacement engine — no bias</div>
-        <div class="brand-feature">Fair rotation with skip-turn preservation</div>
-        <div class="brand-feature">Leave conflict detection across branches</div>
-        <div class="brand-feature">Full audit trail and explainable decisions</div>
-        <div class="brand-feature">Real-time branch staffing dashboards</div>
-      </div>
-    </div>
-    <div class="brand-bottom">KIB Branch WFM Portal v1.0 — Confidential<br><a href="manager.html" style="color:rgba(255,255,255,0.4);font-size:10px;text-decoration:none">← Back to ATM Portal</a></div>
-  </div>
-  <div class="login-form-panel">
-    <div class="login-box">
-      <h2>Sign in</h2>
-      <p class="login-sub">Enter your credentials to access the portal.</p>
-      <div class="error-msg" id="login-error">⚠ Invalid username or password.</div>
-      <div class="form-field">
-        <label>Username</label>
-        <input type="text" id="login-user" placeholder="Enter your username" autocomplete="username">
-      </div>
-      <div class="form-field">
-        <label>Password</label>
-        <input type="password" id="login-pass" placeholder="Enter your password" autocomplete="current-password">
-      </div>
-      <button class="submit-btn" onclick="doLogin()">Sign In</button>
-      <div class="demo-creds">
-        <h4>Demo Credentials</h4>
-        <div class="demo-row" onclick="fillLogin('head.branches','HoB@2026')">
-          <span class="demo-role">Head of Branches</span>
-          <span class="demo-user">head.branches</span>
-          <span class="demo-use">Use →</span>
-        </div>
-        <div class="demo-row" onclick="fillLogin('area.manager1','AM1@2026')">
-          <span class="demo-role">Area Manager 1</span>
-          <span class="demo-user">area.manager1</span>
-          <span class="demo-use">Use →</span>
-        </div>
-        <div class="demo-row" onclick="fillLogin('area.manager2','AM2@2026')">
-          <span class="demo-role">Area Manager 2</span>
-          <span class="demo-user">area.manager2</span>
-          <span class="demo-use">Use →</span>
-        </div>
-        <div class="demo-row" onclick="fillLogin('head.quality','QC@2026')">
-          <span class="demo-role">Head of Quality Control</span>
-          <span class="demo-user">head.quality</span>
-          <span class="demo-use">Use →</span>
-        </div>
-        <div class="demo-row" onclick="fillLogin('admin','Admin@2026')">
-          <span class="demo-role">Admin / Superuser</span>
-          <span class="demo-user">admin</span>
-          <span class="demo-use">Use →</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════
      APP
 ═══════════════════════════════════════════════ -->
-<div id="app">
+<div id="app" style="display:none">
   <button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div class="layout">
@@ -1047,149 +928,75 @@ textarea.form-control{resize:vertical;min-height:80px}
 
 // ── CONFIG ──────────────────────────────────────────────────
 const CONFIG = {
-  N8N_BASE: 'https://your.n8n.cloud/webhook',
-  FAIRNESS_WEIGHTS: { coverageCount:40, daysSinceLastCover:30, skipTurn:20, proximity:10 }
+  N8N_BASE: 'https://atmproject.app.n8n.cloud/webhook',
+  FAIRNESS_WEIGHTS: { coverageCount:40, daysSinceLastCover:30, skipTurn:20, proximity:10 },
+  USE_API: true  // set false to use mock data
 };
 
-// ── AUTH ────────────────────────────────────────────────────
-const USERS = [
-  { username:'head.branches', password:'HoB@2026', role:'Head of Branches', area:null, color:'#1D6FBB',
-    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit'] },
-  { username:'area.manager1', password:'AM1@2026', role:'Area Manager 1', area:'Area 1', color:'#16a34a',
-    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage'] },
-  { username:'area.manager2', password:'AM2@2026', role:'Area Manager 2', area:'Area 2', color:'#7c3aed',
-    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage'] },
-  { username:'head.quality',  password:'QC@2026',  role:'Head of QC', area:null, color:'#d97706',
-    permissions:['dashboard','employees','branches','coverage','fairness','audit'] },
-  { username:'admin',         password:'Admin@2026', role:'Admin / Superuser', area:null, color:'#dc2626',
-    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit','settings'] },
-];
+// ── WFM API LAYER ────────────────────────────────────────────
+const WFM_API = {
+  async get(endpoint, params={}) {
+    if(!CONFIG.USE_API) return null;
+    try {
+      const url = new URL(CONFIG.N8N_BASE + '/' + endpoint);
+      Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+      const res = await fetch(url.toString());
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch(e) { console.warn('WFM API GET error:', endpoint, e.message); return null; }
+  },
+  async post(endpoint, body) {
+    if(!CONFIG.USE_API) return null;
+    try {
+      const res = await fetch(CONFIG.N8N_BASE + '/' + endpoint, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch(e) { console.warn('WFM API POST error:', endpoint, e.message); return null; }
+  }
+};
 
+// ── AUTH — Uses ATM Portal Session ──────────────────────────
 let currentUser = null;
 
-function fillLogin(u,p){ document.getElementById('login-user').value=u; document.getElementById('login-pass').value=p; }
+const ROLE_MAP = {
+  'manager':     { role:'Head of Branches', area:null, color:'#1D6FBB', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit','settings'] },
+  'atm_manager': { role:'Head of Branches', area:null, color:'#1D6FBB', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit','settings'] },
+  'branch_user': { role:'Branch Manager',   area:null, color:'#16a34a', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage'] },
+  'vendor':      { role:'Head of QC',       area:null, color:'#d97706', permissions:['dashboard','employees','branches','coverage','fairness'] },
+  'vendor_user': { role:'Head of QC',       area:null, color:'#d97706', permissions:['dashboard','employees','branches','coverage','fairness'] },
+};
 
-function checkATMSession(){
-  // Check if user is already logged in via ATM portal session
+function loadATMSession() {
   try {
-    const raw = sessionStorage.getItem('kib_atm_session');
-    if(raw){
-      const sess = JSON.parse(raw);
-      if(sess && sess.role && new Date(sess.expires_at) > new Date()){
-        // Map ATM portal roles to WFM roles
-        const roleMap = {
-          'manager': { username: sess.username||'manager', password:'', role:'Head of Branches', area:null, color:'#1D6FBB',
-            permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit'] },
-          'atm_manager': { username: sess.username||'manager', password:'', role:'Head of Branches', area:null, color:'#1D6FBB',
-            permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit'] },
-          'branch_user': { username: sess.username||'branch', password:'', role:'Area Manager 1', area:'Area 1', color:'#16a34a',
-            permissions:['dashboard','absence','leave','replacement','employees','branches','coverage'] },
-        };
-        const mappedUser = roleMap[sess.role];
-        if(mappedUser){
-          mappedUser.username = sess.username || mappedUser.username;
-          currentUser = mappedUser;
-          document.getElementById('login-page').style.display='none';
-          document.getElementById('app').style.display='block';
-          initApp();
-          return true;
-        }
-      }
-    }
-  } catch(e){}
-  return false;
+    const raw = sessionStorage.getItem('atm_portal_session');
+    if (!raw) return false;
+    const sess = JSON.parse(raw);
+    if (!sess || !sess.role) return false;
+    if (new Date(sess.expires_at) < new Date()) return false;
+    const mapped = ROLE_MAP[sess.role] || ROLE_MAP['manager'];
+    currentUser = {
+      username:    sess.user_id || sess.username || 'user',
+      full_name:   sess.full_name || sess.username || 'User',
+      role:        mapped.role,
+      area:        mapped.area,
+      color:       mapped.color,
+      permissions: mapped.permissions,
+      atm_role:    sess.role,
+      branch_id:   sess.branch_id || null,
+    };
+    return true;
+  } catch(e) { console.error('Session error:', e); return false; }
 }
 
-function doLogin(){
-  const u=document.getElementById('login-user').value.trim();
-  const p=document.getElementById('login-pass').value.trim();
-  const user=USERS.find(x=>x.username===u&&x.password===p);
-  if(!user){
-    const err=document.getElementById('login-error');
-    err.classList.add('visible'); return;
-  }
-  currentUser=user;
-  document.getElementById('login-page').style.display='none';
-  document.getElementById('app').style.display='block';
-  initApp();
+function doLogout() {
+  sessionStorage.removeItem('atm_portal_session');
+  window.location.href = 'login.html';
 }
-
-function doLogout(){
-  currentUser=null;
-  document.getElementById('app').style.display='none';
-  document.getElementById('login-page').style.display='flex';
-  document.getElementById('login-error').classList.remove('visible');
-}
-
-// ── MOCK DATA ────────────────────────────────────────────────
-const AREAS = ['Area 1','Area 2'];
-const BRANCHES = [
-  {id:'BR-HO', name:'Head Office',      area:'Area 1', health:'healthy'},
-  {id:'BR-SA', name:'Salmiya',          area:'Area 1', health:'warning'},
-  {id:'BR-SD', name:'Siddeeq',          area:'Area 1', health:'healthy'},
-  {id:'BR-FA', name:'Farwaniya',        area:'Area 1', health:'critical'},
-  {id:'BR-AD', name:'Adailiya',         area:'Area 1', health:'healthy'},
-  {id:'BR-WJ', name:'West Jahra',       area:'Area 2', health:'warning'},
-  {id:'BR-JA', name:'Jaber Al Ahmad',   area:'Area 2', health:'healthy'},
-  {id:'BR-MK', name:'Mubarak Kabeer',   area:'Area 2', health:'healthy'},
-  {id:'BR-SS', name:'Sabah Al Salem',   area:'Area 2', health:'warning'},
-  {id:'BR-AH', name:'Ahmadi',           area:'Area 2', health:'critical'},
-];
-
-const POSITIONS = ['Teller','Customer Service','Supervisor','Senior Teller','Operations Officer'];
-const AVATARS = ['#1D6FBB','#16a34a','#7c3aed','#d97706','#dc2626','#0891b2','#be185d','#15803d','#1e40af','#92400e'];
-
-let EMPLOYEES = [
-  {id:'EMP-001',name:'Ahmad Al-Rashidi',    area:'Area 1',branch:'BR-HO',position:'Teller',          status:'Available',coverCount:3,lastCover:'2026-03-10',skipCount:1,leaveBalance:18,joinDate:'2021-01-15'},
-  {id:'EMP-002',name:'Sara Al-Mutairi',     area:'Area 1',branch:'BR-SA',position:'Customer Service', status:'Available',coverCount:5,lastCover:'2026-03-20',skipCount:0,leaveBalance:14,joinDate:'2020-03-20'},
-  {id:'EMP-003',name:'Fahad Al-Shammar',    area:'Area 1',branch:'BR-HO',position:'Supervisor',       status:'On Leave', coverCount:2,lastCover:'2026-02-15',skipCount:2,leaveBalance:7, joinDate:'2019-06-01'},
-  {id:'EMP-004',name:'Nora Al-Enezi',       area:'Area 1',branch:'BR-SD',position:'Teller',          status:'Available',coverCount:1,lastCover:'2026-01-20',skipCount:0,leaveBalance:21,joinDate:'2022-09-10'},
-  {id:'EMP-005',name:'Khalid Al-Dossari',   area:'Area 1',branch:'BR-FA',position:'Teller',          status:'Absent',   coverCount:4,lastCover:'2026-03-18',skipCount:1,leaveBalance:12,joinDate:'2020-11-05'},
-  {id:'EMP-006',name:'Mariam Al-Otaibi',    area:'Area 1',branch:'BR-AD',position:'Senior Teller',   status:'Available',coverCount:0,lastCover:null,          skipCount:0,leaveBalance:21,joinDate:'2023-02-14'},
-  {id:'EMP-007',name:'Yousif Al-Hajri',     area:'Area 2',branch:'BR-WJ',position:'Teller',          status:'Available',coverCount:6,lastCover:'2026-03-22',skipCount:0,leaveBalance:9, joinDate:'2018-07-01'},
-  {id:'EMP-008',name:'Hessa Al-Kandari',    area:'Area 2',branch:'BR-JA',position:'Customer Service', status:'Available',coverCount:2,lastCover:'2026-02-28',skipCount:1,leaveBalance:16,joinDate:'2021-04-20'},
-  {id:'EMP-009',name:'Bader Al-Shammari',   area:'Area 2',branch:'BR-MK',position:'Operations Officer',status:'On Leave',coverCount:3,lastCover:'2026-03-05',skipCount:0,leaveBalance:5, joinDate:'2020-08-15'},
-  {id:'EMP-010',name:'Fatima Al-Ajmi',      area:'Area 2',branch:'BR-SS',position:'Supervisor',       status:'Available',coverCount:1,lastCover:'2026-02-10',skipCount:2,leaveBalance:19,joinDate:'2022-01-20'},
-  {id:'EMP-011',name:'Ali Al-Mutairi',      area:'Area 1',branch:'BR-SA',position:'Teller',           status:'Available',coverCount:2,lastCover:'2026-03-01',skipCount:0,leaveBalance:21,joinDate:'2023-05-10'},
-  {id:'EMP-012',name:'Noura Al-Rashidi',    area:'Area 2',branch:'BR-AH',position:'Teller',           status:'Available',coverCount:4,lastCover:'2026-03-15',skipCount:0,leaveBalance:13,joinDate:'2020-02-28'},
-  {id:'EMP-013',name:'Jasem Al-Dossari',    area:'Area 1',branch:'BR-SD',position:'Senior Teller',    status:'Available',coverCount:0,lastCover:null,          skipCount:0,leaveBalance:21,joinDate:'2023-08-01'},
-  {id:'EMP-014',name:'Reem Al-Kandari',     area:'Area 2',branch:'BR-JA',position:'Teller',           status:'Available',coverCount:3,lastCover:'2026-02-20',skipCount:1,leaveBalance:15,joinDate:'2021-10-15'},
-  {id:'EMP-015',name:'Mohammed Al-Enezi',   area:'Area 1',branch:'BR-FA',position:'Customer Service', status:'Available',coverCount:1,lastCover:'2026-01-10',skipCount:0,leaveBalance:20,joinDate:'2022-06-01'},
-];
-
-let ABSENCE_LOG = [
-  {id:'ABS-001',employee:'Khalid Al-Dossari',empId:'EMP-005',branch:'BR-FA',branchName:'Farwaniya',position:'Teller',type:'Medical',start:'2026-04-01',returnDate:'2026-04-03',status:'Open',replacement:'Nora Al-Enezi',notes:'Sick leave'},
-  {id:'ABS-002',employee:'Fahad Al-Shammar', empId:'EMP-003',branch:'BR-HO',branchName:'Head Office',position:'Supervisor',type:'Emergency',start:'2026-04-01',returnDate:'',status:'Open',replacement:'Pending',notes:'Family emergency'},
-  {id:'ABS-003',employee:'Bader Al-Shammari',empId:'EMP-009',branch:'BR-MK',branchName:'Mubarak Kabeer',position:'Operations Officer',type:'Official Leave',start:'2026-03-28',returnDate:'2026-04-05',status:'Open',replacement:'Hessa Al-Kandari',notes:''},
-];
-
-let LEAVE_REQUESTS = [
-  {id:'LV-001',employee:'Sara Al-Mutairi',empId:'EMP-002',branch:'BR-SA',position:'Customer Service',type:'Annual',from:'2026-04-10',to:'2026-04-17',days:6,status:'Pending',notes:'Planned vacation',submittedAt:'2026-04-01'},
-  {id:'LV-002',employee:'Ahmad Al-Rashidi',empId:'EMP-001',branch:'BR-HO',position:'Teller',type:'Medical',from:'2026-04-05',to:'2026-04-07',days:3,status:'Approved',notes:'Medical procedure',submittedAt:'2026-04-01'},
-  {id:'LV-003',employee:'Hessa Al-Kandari',empId:'EMP-008',branch:'BR-JA',position:'Customer Service',type:'Annual',from:'2026-04-15',to:'2026-04-22',days:6,status:'Pending',notes:'',submittedAt:'2026-04-01'},
-  {id:'LV-004',employee:'Fatima Al-Ajmi',  empId:'EMP-010',branch:'BR-SS',position:'Supervisor',type:'Annual',from:'2026-04-20',to:'2026-04-27',days:6,status:'Approved',notes:'',submittedAt:'2026-03-25'},
-  {id:'LV-005',employee:'Noura Al-Rashidi',empId:'EMP-012',branch:'BR-AH',position:'Teller',type:'Study',from:'2026-04-08',to:'2026-04-09',days:2,status:'Rejected',notes:'Exam period',submittedAt:'2026-03-30'},
-];
-
-let COVERAGE_HISTORY = [
-  {date:'2026-03-22',covered:'Khalid Al-Dossari',replacement:'Nora Al-Enezi',branch:'Farwaniya',position:'Teller',duration:1,status:'Completed',reason:'Medical'},
-  {date:'2026-03-20',covered:'Fahad Al-Shammar', replacement:'Ahmad Al-Rashidi',branch:'Head Office',position:'Supervisor',duration:1,status:'Completed',reason:'Emergency'},
-  {date:'2026-03-18',covered:'Bader Al-Shammari',replacement:'Hessa Al-Kandari',branch:'Mubarak Kabeer',position:'Operations Officer',duration:3,status:'Completed',reason:'Leave'},
-  {date:'2026-03-15',covered:'Sara Al-Mutairi',  replacement:'Ali Al-Mutairi',branch:'Salmiya',position:'Customer Service',duration:1,status:'Completed',reason:'Medical'},
-  {date:'2026-03-10',covered:'Yousif Al-Hajri',  replacement:'Fatima Al-Ajmi',branch:'West Jahra',position:'Teller',duration:2,status:'Completed',reason:'Emergency'},
-  {date:'2026-03-05',covered:'Nora Al-Enezi',    replacement:'Mohammed Al-Enezi',branch:'Siddeeq',position:'Teller',duration:1,status:'Completed',reason:'Medical'},
-  {date:'2026-03-01',covered:'Mariam Al-Otaibi', replacement:'Jasem Al-Dossari',branch:'Adailiya',position:'Senior Teller',duration:1,status:'Completed',reason:'Medical'},
-];
-
-let AUDIT_LOG = [
-  {timestamp:'2026-04-01 09:15',user:'area.manager1',role:'Area Manager 1',action:'AbsenceReported',details:'Khalid Al-Dossari | Farwaniya | Medical',result:'Success'},
-  {timestamp:'2026-04-01 09:18',user:'area.manager1',role:'Area Manager 1',action:'ReplacementAssigned',details:'Nora Al-Enezi assigned to cover Farwaniya Teller',result:'Success'},
-  {timestamp:'2026-04-01 08:50',user:'area.manager2',role:'Area Manager 2',action:'LeaveApproved',details:'LV-004 — Fatima Al-Ajmi Annual Leave',result:'Success'},
-  {timestamp:'2026-03-30 14:20',user:'admin',role:'Admin',action:'LeaveRejected',details:'LV-005 — Noura Al-Rashidi — Staffing conflict',result:'Success'},
-  {timestamp:'2026-03-29 11:00',user:'head.quality',role:'Head of QC',action:'FairnessAudit',details:'Monthly fairness review exported',result:'Success'},
-  {timestamp:'2026-03-28 09:05',user:'area.manager2',role:'Area Manager 2',action:'AbsenceReported',details:'Bader Al-Shammari | Mubarak Kabeer | Official Leave',result:'Success'},
-  {timestamp:'2026-03-22 15:30',user:'area.manager1',role:'Area Manager 1',action:'ReplacementOverridden',details:'Override: selected Nora (system recommended Ali) — Reason: proximity',result:'Override Logged'},
-];
 
 // ── NAVIGATION CONFIG ────────────────────────────────────────
 const NAV_ITEMS = [
@@ -1213,8 +1020,8 @@ function initApp(){
   const initials = currentUser.role.split(' ').map(w=>w[0]).join('').slice(0,2);
   document.getElementById('nav-avatar').textContent=initials;
   document.getElementById('nav-avatar').style.background=currentUser.color;
-  document.getElementById('nav-name').textContent=currentUser.username;
-  document.getElementById('nav-role').textContent=currentUser.role;
+  document.getElementById('nav-name').textContent=currentUser.full_name||currentUser.username;
+  document.getElementById('nav-role').textContent=currentUser.role+(currentUser.branch_id?' — '+currentUser.branch_id:'');
 
   // Build nav
   buildNav();
@@ -1224,6 +1031,13 @@ function initApp(){
 
   // Set date
   document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Try loading real data from API
+  if(CONFIG.USE_API) {
+    loadRealEmployees();
+    loadRealLeaves();
+    loadRealAbsences();
+  }
 
   // Load default page
   navigateTo('dashboard');
@@ -2293,11 +2107,156 @@ document.querySelectorAll('.modal-overlay').forEach(overlay=>{
   overlay.addEventListener('click',e=>{ if(e.target===overlay) overlay.classList.remove('open'); });
 });
 
-// Enter key on login
-document.getElementById('login-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+// Check ATM session on load — redirect to login if none
+window.addEventListener('load', () => {
+  if (!loadATMSession()) {
+    window.location.href = 'login.html?reason=session_expired&redirect=wfm.html';
+    return;
+  }
+  document.getElementById('app').style.display = 'block';
+  initApp();
+});
 
-// Auto-login if ATM session exists
-window.addEventListener('load', () => { checkATMSession(); });
+// ══════════════════════════════════════════════════════════
+//   REAL API DATA LOADERS
+// ══════════════════════════════════════════════════════════
+async function loadRealEmployees(){
+  const res = await WFM_API.get('wfm-employees');
+  if(res && res.success && res.employees && res.employees.length > 0){
+    // Map API fields to local format
+    EMPLOYEES = res.employees.map(e => ({
+      id:          e.emp_id,
+      name:        e.full_name,
+      area:        e.area,
+      branch:      e.branch_id,
+      position:    e.position,
+      status:      e.status || 'Available',
+      coverCount:  parseInt(e.cover_count) || 0,
+      lastCover:   e.last_cover_date || null,
+      skipCount:   parseInt(e.skip_count) || 0,
+      leaveBalance:parseInt(e.leave_balance) || 21,
+      joinDate:    e.join_date || '',
+    }));
+    // Also map branches from employee data
+    const branchMap = {};
+    EMPLOYEES.forEach(e => {
+      if(!branchMap[e.branch]){
+        branchMap[e.branch] = {id:e.branch, name:e.area==='Area 1'?e.area+' '+e.branch:e.branch, area:e.area, health:'healthy'};
+      }
+    });
+    renderEmployeeTable();
+    renderQueueState();
+    console.log('✅ Employees loaded from Google Sheets:', EMPLOYEES.length);
+  }
+}
+
+async function loadRealAbsences(){
+  const res = await WFM_API.get('wfm-dashboard');
+  if(res && res.success){
+    if(res.open_absences && res.open_absences.length > 0){
+      ABSENCE_LOG = res.open_absences.map(a => ({
+        id:          a.absence_id,
+        employee:    a.employee_name,
+        empId:       a.emp_id,
+        branch:      a.branch_id,
+        branchName:  a.branch_name,
+        position:    a.position,
+        type:        a.absence_type,
+        start:       a.start_date,
+        returnDate:  a.return_date || '',
+        status:      a.status,
+        replacement: a.replacement_name || 'Pending',
+        notes:       a.notes || ''
+      }));
+    }
+    loadAbsenceCases();
+  }
+}
+
+async function loadRealLeaves(){
+  const res = await WFM_API.get('wfm-dashboard');
+  if(res && res.success && res.pending_leaves){
+    // Merge with existing
+    if(res.pending_leaves.length > 0){
+      const apiLeaves = res.pending_leaves.map(l => ({
+        id:       l.leave_id,
+        employee: l.employee_name,
+        empId:    l.emp_id,
+        branch:   l.branch_id,
+        position: l.position,
+        type:     l.leave_type,
+        from:     l.from_date,
+        to:       l.to_date,
+        days:     parseInt(l.days) || 1,
+        status:   l.status,
+        notes:    l.notes || '',
+        submittedAt: l.submitted_at || ''
+      }));
+      LEAVE_REQUESTS = [...apiLeaves, ...LEAVE_REQUESTS.filter(l => !apiLeaves.find(a => a.id === l.id))];
+    }
+    renderLeaveRequests();
+    renderCalendar();
+  }
+}
+
+// Override submitAbsence to call real API
+const _origSubmitAbsence = submitAbsence;
+async function submitAbsence(){
+  const branchId = document.getElementById('abs-branch').value;
+  const empId    = document.getElementById('abs-employee').value;
+  const absType  = document.getElementById('abs-type').value;
+  const start    = document.getElementById('abs-start').value;
+  if(!branchId||!empId||!absType||!start){toast('Fill required fields','error');return;}
+
+  if(CONFIG.USE_API){
+    const res = await WFM_API.post('wfm-absence', {
+      emp_id: empId, absence_type: absType, start_date: start,
+      return_date: document.getElementById('abs-return').value,
+      notes: document.getElementById('abs-notes').value,
+      reported_by: currentUser.username
+    });
+    if(res && res.success){
+      toast('✅ Absence recorded in Google Sheets','success');
+      await loadRealAbsences();
+    } else {
+      toast('API unavailable — using local mode','warning');
+    }
+  }
+  // Always run local version too
+  _origSubmitAbsence();
+}
+
+// Override runReplacementEngine to call real fairness engine
+const _origRunEngine = runReplacementEngine;
+async function runReplacementEngine(){
+  const branchId  = document.getElementById('rep-branch').value;
+  const position  = document.getElementById('rep-position').value;
+  const date      = document.getElementById('rep-date').value;
+  const crossArea = document.getElementById('rep-cross-area').value;
+  if(!branchId||!position||!date){toast('Please fill all fields','error');return;}
+
+  const branch = BRANCHES.find(b=>b.id===branchId);
+
+  if(CONFIG.USE_API){
+    const res = await WFM_API.post('wfm-recommend-replacement', {
+      branch_id: branchId, branch_name: branch?.name||branchId,
+      position, date, cross_area: crossArea, area: branch?.area||''
+    });
+    if(res && res.success && res.all_candidates){
+      // Map API response to local format
+      const results = res.all_candidates.map(c => ({
+        employee: {id:c.emp_id, name:c.name, position:c.position, branch:c.branch, area:c.area, status:c.status, coverCount:c.cover_count, lastCover:c.last_cover, skipCount:c.skip_count},
+        score: c.score, reasons: c.reasons, rank: c.rank
+      }));
+      toast('✅ Fairness engine ran on Google Sheets data','success');
+      renderReplacementResults(branch, position, date, results);
+      return;
+    }
+  }
+  // Fallback to local engine
+  _origRunEngine();
+}
+
 </script>
 </body>
 </html>
