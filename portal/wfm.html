@@ -964,11 +964,22 @@ const WFM_API = {
 let currentUser = null;
 
 const ROLE_MAP = {
-  'manager':     { role:'Head of Branches', area:null, color:'#1D6FBB', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit','settings'] },
-  'atm_manager': { role:'Head of Branches', area:null, color:'#1D6FBB', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit','settings'] },
-  'branch_user': { role:'Branch Manager',   area:null, color:'#16a34a', permissions:['dashboard','absence','leave','replacement','employees','branches','coverage'] },
-  'vendor':      { role:'Head of QC',       area:null, color:'#d97706', permissions:['dashboard','employees','branches','coverage','fairness'] },
-  'vendor_user': { role:'Head of QC',       area:null, color:'#d97706', permissions:['dashboard','employees','branches','coverage','fairness'] },
+  // Area Manager — approve leave, report absence, view coverage, area calendar
+  'area_manager': {
+    role:'Area Manager', area:null, color:'#16a34a',
+    permissions:['dashboard','absence','leave','branches','coverage','audit']
+  },
+  // Head of Branches — all areas, approve leave, full WFM visibility
+  'head_branches': {
+    role:'Head of Branches', area:null, color:'#1D6FBB',
+    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit']
+  },
+  // ATM Manager — redirected here if they access wfm.html (read-only)
+  'manager':     { role:'ATM Manager',    area:null, color:'#6C3483', permissions:['dashboard','branches'] },
+  'atm_manager': { role:'ATM Manager',    area:null, color:'#6C3483', permissions:['dashboard','branches'] },
+  'branch_user': { role:'Branch Staff',   area:null, color:'#94a3b8', permissions:['leave'] },
+  'vendor':      { role:'Vendor',         area:null, color:'#d97706', permissions:[] },
+  'vendor_user': { role:'Vendor',         area:null, color:'#d97706', permissions:[] },
 };
 
 function loadATMSession() {
@@ -1000,16 +1011,16 @@ function doLogout() {
 
 // ── NAVIGATION CONFIG ────────────────────────────────────────
 const NAV_ITEMS = [
-  {id:'dashboard',     label:'Dashboard',          icon:'📊', section:'OVERVIEW'},
-  {id:'absence',       label:'Report Absence',     icon:'🚨', section:'OPERATIONS', badge:2, badgeColor:'red'},
-  {id:'replacement',   label:'Replacement Engine', icon:'🤖', section:'OPERATIONS'},
-  {id:'leave',         label:'Leave Management',   icon:'📅', section:'OPERATIONS', badge:2, badgeColor:'amber'},
-  {id:'employees',     label:'Employees',          icon:'👤', section:'WORKFORCE'},
-  {id:'branches',      label:'Branch Status',      icon:'🏢', section:'WORKFORCE'},
-  {id:'coverage',      label:'Coverage History',   icon:'📋', section:'WORKFORCE'},
-  {id:'fairness',      label:'Fairness Monitor',   icon:'⚖️',  section:'ANALYTICS'},
-  {id:'audit',         label:'Audit Log',          icon:'🔍', section:'ANALYTICS'},
-  {id:'settings',      label:'Settings',           icon:'⚙️',  section:'SYSTEM'},
+  {id:'dashboard',   label:'Dashboard',        icon:'📊', section:'OVERVIEW'},
+  {id:'absence',     label:'Report Absence',   icon:'🚨', section:'OPERATIONS', badge:null},
+  {id:'leave',       label:'Leave Management', icon:'📅', section:'OPERATIONS', badge:null},
+  {id:'replacement', label:'Find Coverage',    icon:'🤖', section:'OPERATIONS'},
+  {id:'branches',    label:'Branch Status',    icon:'🏢', section:'WORKFORCE'},
+  {id:'coverage',    label:'Coverage History', icon:'📋', section:'WORKFORCE'},
+  {id:'employees',   label:'All Staff',        icon:'👤', section:'WORKFORCE'},
+  {id:'fairness',    label:'Fairness Monitor', icon:'⚖️',  section:'ANALYTICS'},
+  {id:'audit',       label:'Audit Log',        icon:'🔍', section:'ANALYTICS'},
+  {id:'settings',    label:'Settings',         icon:'⚙️',  section:'SYSTEM'},
 ];
 
 // ── INIT APP ────────────────────────────────────────────────
