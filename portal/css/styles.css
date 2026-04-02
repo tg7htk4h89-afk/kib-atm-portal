@@ -1129,3 +1129,132 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 
 /* ─── Mobile menu button — hide on desktop ─── */
 .mobile-menu-btn { display: none; }
+
+/* ─── MOBILE — Additional iPhone Fixes ──────────────── */
+@media (max-width: 768px) {
+
+  /* Prevent iOS input zoom (must be 16px+) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Mobile menu button */
+  .mobile-menu-btn {
+    display: flex !important;
+    position: fixed;
+    top: 12px; left: 12px;
+    z-index: 300;
+    width: 42px; height: 42px;
+    background: var(--brand-navy);
+    border: none; border-radius: 8px;
+    align-items: center; justify-content: center;
+    cursor: pointer; color: #fff; font-size: 18px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Safe area for iPhone notch */
+  .main-content {
+    padding-top: env(safe-area-inset-top, 56px);
+  }
+
+  /* Touch-friendly buttons */
+  .btn, button {
+    min-height: 40px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better table scrolling on iOS */
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+
+  /* Full width selects on mobile */
+  .page-header .flex {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* KPI grid — 2 cols on phone */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  /* Machine tiles — 2 per row */
+  .machine-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+
+  /* Machine tile text size */
+  .machine-tile {
+    padding: 10px 8px;
+  }
+  .tile-id { font-size: 10px; }
+  .tile-name { font-size: 11px; }
+
+  /* Cards padding */
+  .card-body { padding: 14px; }
+  .card-header { padding: 12px 14px; }
+
+  /* Page body padding */
+  .page-body { padding: 12px; }
+
+  /* Checklist radio buttons — easier to tap */
+  .radio-group label {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+  }
+
+  /* Modal — full bottom sheet on iPhone */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    border-radius: 16px 16px 0 0;
+    max-height: 90vh;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Live strip compact */
+  .live-strip {
+    font-size: 11px;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Dashboard header */
+  .page-header {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .page-header h1 { font-size: 16px; }
+
+  /* Success/error alerts */
+  .alert { font-size: 12px; padding: 10px 12px; }
+
+  /* Form submit bar */
+  .submit-panel {
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+  }
+  .submit-panel .flex { width: 100%; }
+  .submit-panel .btn { flex: 1; }
+}
+
+/* Very small phones */
+@media (max-width: 375px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 22px; }
+  .machine-grid { grid-template-columns: 1fr 1fr !important; }
+  .page-header h1 { font-size: 15px; }
+}
