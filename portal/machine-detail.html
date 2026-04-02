@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
+  <button class="mobile-menu-btn" onclick="toggleMobileSidebar()" id="mobile-menu-btn">☰</button>
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-logo">
@@ -237,5 +239,16 @@ function severityBadge(severity) {
   return Common.severityBadge(severity);
 }
 </script>
+
+  <script>
+    function toggleMobileSidebar() {
+      document.querySelector('.sidebar').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('active');
+    }
+    function closeMobileSidebar() {
+      document.querySelector('.sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('active');
+    }
+  </script>
 </body>
 </html>
