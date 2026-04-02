@@ -1,14 +1,13 @@
 /**
- * ATM/ITM Operations Portal — Configuration
- * All webhook endpoints and system constants live here.
- * In production, replace N8N_BASE_URL with your actual n8n instance URL.
+ * KIB RBD Operations Portal — Configuration
+ * Role-based access control definitions
  */
 
 const CONFIG = {
   // ─── n8n Webhook Base URL ─────────────────────────────────────────────────
   N8N_BASE_URL: 'https://atmproject.app.n8n.cloud/webhook',
 
-  // ─── API Endpoints (map to n8n webhook paths) ────────────────────────────
+  // ─── API Endpoints ────────────────────────────────────────────────────────
   ENDPOINTS: {
     LOGIN:              '/login',
     GET_MACHINES:       '/machines',
@@ -23,11 +22,14 @@ const CONFIG = {
     UPLOAD_IMAGE:       '/upload-image',
     MACHINE_DETAIL:     '/machine-detail',
     ACTION_LOG:         '/action-log',
+    WFM_LEAVE:          '/wfm-leave',
+    WFM_ABSENCE:        '/wfm-absence',
+    WFM_DASHBOARD:      '/wfm-dashboard',
   },
 
   // ─── Session Config ───────────────────────────────────────────────────────
   SESSION_KEY: 'atm_portal_session',
-  SESSION_TIMEOUT_MINUTES: 480, // 8 hours
+  SESSION_TIMEOUT_MINUTES: 480,
 
   // ─── UI Constants ─────────────────────────────────────────────────────────
   TOAST_DURATION_MS: 4000,
@@ -35,22 +37,16 @@ const CONFIG = {
 
   // ─── Status Colors ────────────────────────────────────────────────────────
   STATUS_CONFIG: {
-    GREEN: { label: 'Healthy',     color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-    AMBER: { label: 'Issue',       color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
-    RED:   { label: 'Critical',    color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-    GREY:  { label: 'Not Tested',  color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+    GREEN: { label: 'Healthy',    color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+    AMBER: { label: 'Issue',      color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+    RED:   { label: 'Critical',   color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+    GREY:  { label: 'Not Tested', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
   },
 
-  // ─── Incident Statuses ────────────────────────────────────────────────────
-  INCIDENT_STATUSES: [
-    'Draft', 'Open', 'Assigned', 'In Progress', 'Pending', 'Resolved', 'Closed', 'Reopened'
-  ],
-
-  // ─── Checklist Sections (matches Google Sheets Checklist_Master) ──────────
+  // ─── Checklist Sections ───────────────────────────────────────────────────
   CHECKLIST_SECTIONS: {
     OPERATIONAL: {
-      label: 'Operational',
-      icon: '⚙️',
+      label: 'Operational', icon: '⚙️',
       items: [
         { id: 'CK01', name: 'ATM Screens / Promotion updated', critical: false },
         { id: 'CK02', name: 'ATM Withdrawal Work',             critical: true  },
@@ -62,45 +58,51 @@ const CONFIG = {
       ]
     },
     PHYSICAL: {
-      label: 'Physical',
-      icon: '🔧',
+      label: 'Physical', icon: '🔧',
       items: [
-        { id: 'CK08', name: 'ATM Overall look and feel',       critical: false },
-        { id: 'CK09', name: 'ATM Cables exposed',              critical: false },
-        { id: 'CK10', name: 'ATM Surround (Casing)',           critical: false },
+        { id: 'CK08', name: 'ATM Overall look and feel', critical: false },
+        { id: 'CK09', name: 'ATM Cables exposed',        critical: false },
+        { id: 'CK10', name: 'ATM Surround (Casing)',     critical: false },
       ]
     },
     SECURITY: {
-      label: 'Security',
-      icon: '🔒',
+      label: 'Security', icon: '🔒',
       items: [
-        { id: 'CK11', name: 'Skimmer Device',                  critical: true  },
-        { id: 'CK12', name: 'PIN Capture (Camera)',             critical: true  },
-        { id: 'CK13', name: 'No USB Device inside the ATM',    critical: true  },
+        { id: 'CK11', name: 'Skimmer Device',              critical: true },
+        { id: 'CK12', name: 'PIN Capture (Camera)',         critical: true },
+        { id: 'CK13', name: 'No USB Device inside the ATM', critical: true },
       ]
     }
   },
 
-  // ─── Role Route Map ───────────────────────────────────────────────────────
+  // ─── ROLE DEFINITIONS ─────────────────────────────────────────────────────
+  // branch_user   = Branch staff — checklist + history + submit leave only
+  // manager       = ATM Manager  — full ATM/ITM control, NO WFM
+  // area_manager  = Area Manager — WFM (leave approve + absence + coverage), no ATM control
+  // head_branches = Head of Branches — WFM all areas + approve leave + reports
+  // vendor        = Vendor — vendor update page only
+  // atm_manager   = alias for manager
+
   ROLE_HOME: {
-    branch_user: 'branch.html',
-    manager:     'manager.html',
-    vendor:      'vendor.html',
-    atm_manager: 'manager.html',
-    vendor_user:  'vendor.html',
+    branch_user:   'branch.html',
+    manager:       'manager.html',
+    atm_manager:   'manager.html',
+    area_manager:  'wfm.html',
+    head_branches: 'wfm.html',
+    vendor:        'vendor.html',
+    vendor_user:   'vendor.html',
   },
 
-  // ─── Allowed Roles Per Page ───────────────────────────────────────────────
   PAGE_ROLES: {
-    'branch.html':         ['branch_user', 'atm_manager', 'manager'],
-    'manager.html':        ['atm_manager', 'manager'],
-    'vendor.html':         ['vendor_user', 'atm_manager', 'vendor', 'manager'],
-    'reports.html':        ['atm_manager', 'manager'],
-    'machine-detail.html': ['atm_manager', 'manager'],
+    'branch.html':         ['branch_user', 'manager', 'atm_manager', 'area_manager', 'head_branches'],
+    'manager.html':        ['manager', 'atm_manager'],
+    'vendor.html':         ['vendor', 'vendor_user', 'manager', 'atm_manager'],
+    'reports.html':        ['manager', 'atm_manager'],
+    'machine-detail.html': ['manager', 'atm_manager'],
+    'wfm.html':            ['area_manager', 'head_branches', 'manager', 'atm_manager'],
   },
 };
 
-// Freeze to prevent accidental mutation
 Object.freeze(CONFIG);
 Object.freeze(CONFIG.ENDPOINTS);
 Object.freeze(CONFIG.STATUS_CONFIG);
