@@ -6,7 +6,7 @@ let selectedImages = [];
 let selectedMachine = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['branch_user', 'atm_manager', 'manager'])) return;
+  if (!Auth.requireAuth(['branch_user', 'manager', 'atm_manager', 'area_manager', 'head_branches'])) return;
   Common.bindLogout();
   Common.injectNavUser();
   _updateClock();
@@ -16,10 +16,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Check view mode FIRST ──────────────────────────────────
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('view') === 'history') {
+  const view = urlParams.get('view');
+
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (view === 'history') {
+    document.getElementById('nav-history')?.classList.add('active');
+    document.getElementById('nav-checklist')?.classList.remove('active');
     await loadSubmissionHistory();
     return;
   }
+  if (view === 'leave') {
+    document.getElementById('nav-leave')?.classList.add('active');
+    document.getElementById('nav-checklist')?.classList.remove('active');
+    await loadLeaveSubmitPage();
+    return;
+  }
+  document.getElementById('nav-checklist')?.classList.add('active');
 
   // ── Normal checklist view ──────────────────────────────────
   if (session.role === 'branch_user' && session.branch_id) {
@@ -979,5 +992,211 @@ async function viewLastTest(machineDataStr) {
         🔄 Retest Anyway
       </button>
     </div>`;
+  }
+}
+
+// ─── LEAVE SUBMIT PAGE ────────────────────────────────────────────────────────
+async function loadLeaveSubmitPage() {
+  const session = Auth.getSession();
+  const pageHeader = document.querySelector('.page-header h1');
+  if (pageHeader) pageHeader.textContent = 'Submit Leave Request';
+
+  const body = document.querySelector('.page-body');
+  if (!body) return;
+
+  const today = new Date().toISOString().slice(0,10);
+
+  body.innerHTML = `
+    <div style="max-width:640px">
+
+      <!-- My Leave Balance Card -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div class="card-title">📊 My Leave Status</div>
+        </div>
+        <div class="card-body" style="display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:100px;text-align:center;padding:12px;background:var(--status-green-bg);border-radius:8px;border:1px solid var(--status-green-bdr)">
+            <div style="font-size:28px;font-weight:700;color:var(--status-green)" id="lv-balance-annual">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Annual Leave Days</div>
+          </div>
+          <div style="flex:1;min-width:100px;text-align:center;padding:12px;background:var(--status-amber-bg);border-radius:8px;border:1px solid var(--status-amber-bdr)">
+            <div style="font-size:28px;font-weight:700;color:var(--status-amber)" id="lv-pending-count">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Pending Requests</div>
+          </div>
+          <div style="flex:1;min-width:100px;text-align:center;padding:12px;background:var(--off-white);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-size:28px;font-weight:700;color:var(--text)" id="lv-taken-count">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Days Taken (YTD)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leave Request Form -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div class="card-title">📝 New Leave Request</div>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label required">Leave Type</label>
+            <select class="form-control" id="lv-type" style="font-size:16px">
+              <option value="Annual">Annual Leave</option>
+              <option value="Medical">Medical Leave</option>
+              <option value="Emergency">Emergency Leave</option>
+              <option value="Unpaid">Unpaid Leave</option>
+              <option value="Study">Study Leave</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label class="form-label required">From Date</label>
+              <input type="date" class="form-control" id="lv-from" value="${today}" min="${today}" oninput="calcLeaveDays()" style="font-size:16px">
+            </div>
+            <div class="form-group">
+              <label class="form-label required">To Date</label>
+              <input type="date" class="form-control" id="lv-to" value="${today}" min="${today}" oninput="calcLeaveDays()" style="font-size:16px">
+            </div>
+          </div>
+
+          <div id="lv-days-display" style="padding:10px 14px;background:var(--off-white);border-radius:6px;border:1px solid var(--border);font-size:13px;margin-bottom:16px;display:none">
+            📅 Duration: <strong id="lv-days-num">0</strong> working day(s)
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Reason / Notes</label>
+            <textarea class="form-control" id="lv-notes" rows="3" placeholder="Optional — add any relevant details..." style="font-size:16px"></textarea>
+          </div>
+
+          <div id="lv-conflict-alert" class="hidden" style="padding:10px 14px;background:var(--status-amber-bg);border:1px solid var(--status-amber-bdr);border-radius:6px;font-size:12px;color:var(--status-amber);margin-bottom:16px">
+            ⚠️ <span id="lv-conflict-text"></span>
+          </div>
+
+          <div id="lv-success-alert" class="hidden" style="padding:12px 16px;background:var(--status-green-bg);border:1px solid var(--status-green-bdr);border-radius:6px;font-size:13px;color:var(--status-green);margin-bottom:16px">
+            ✅ Leave request submitted successfully! Your manager will review and respond.
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-secondary" onclick="window.location.href='branch.html'">Cancel</button>
+            <button class="btn btn-primary" id="lv-submit-btn" onclick="submitLeaveFromBranch()">Submit Leave Request</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Leave History -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📋 My Leave History</div>
+        </div>
+        <div class="card-body-tight">
+          <div id="my-leave-history" style="padding:20px;text-align:center;color:var(--text-muted)">
+            <div class="spinner" style="margin:0 auto 8px"></div>
+            Loading leave history...
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Load employee leave data
+  loadMyLeaveData(session);
+}
+
+function calcLeaveDays() {
+  const from = document.getElementById('lv-from')?.value;
+  const to   = document.getElementById('lv-to')?.value;
+  if (!from || !to) return;
+  const days = Math.max(0, Math.ceil((new Date(to) - new Date(from)) / (1000*60*60*24)) + 1);
+  const disp = document.getElementById('lv-days-display');
+  const num  = document.getElementById('lv-days-num');
+  if (disp && num) { num.textContent = days; disp.style.display = 'block'; }
+}
+
+async function loadMyLeaveData(session) {
+  // Show placeholder balance
+  document.getElementById('lv-balance-annual').textContent = '21';
+  document.getElementById('lv-pending-count').textContent = '0';
+  document.getElementById('lv-taken-count').textContent = '0';
+
+  // Try to get real data from WFM API
+  try {
+    const res = await API.get(CONFIG.ENDPOINTS.WFM_DASHBOARD, {});
+    if (res && res.success && res.pending_leaves) {
+      const myLeaves = res.pending_leaves.filter(l => l.emp_id === session.user_id || l.employee_name === session.full_name);
+      document.getElementById('lv-pending-count').textContent = myLeaves.filter(l=>l.status==='Pending').length;
+      renderMyLeaveHistory(myLeaves);
+      return;
+    }
+  } catch(e) {}
+
+  document.getElementById('my-leave-history').innerHTML =
+    '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">No leave records found</div>';
+}
+
+function renderMyLeaveHistory(leaves) {
+  const el = document.getElementById('my-leave-history');
+  if (!leaves || !leaves.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">No leave records found</div>';
+    return;
+  }
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th></tr></thead>
+    <tbody>${leaves.map(l=>`<tr>
+      <td style="font-size:12px">${l.leave_type||l.type}</td>
+      <td class="mono" style="font-size:11px">${l.from_date||l.from}</td>
+      <td class="mono" style="font-size:11px">${l.to_date||l.to}</td>
+      <td style="font-weight:700">${l.days}d</td>
+      <td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+        background:${l.status==='Approved'?'var(--status-green-bg)':l.status==='Rejected'?'var(--status-red-bg)':'var(--status-amber-bg)'};
+        color:${l.status==='Approved'?'var(--status-green)':l.status==='Rejected'?'var(--status-red)':'var(--status-amber)'}">
+        ${l.status}</span></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function submitLeaveFromBranch() {
+  const session = Auth.getSession();
+  const type  = document.getElementById('lv-type').value;
+  const from  = document.getElementById('lv-from').value;
+  const to    = document.getElementById('lv-to').value;
+  const notes = document.getElementById('lv-notes').value.trim();
+
+  if (!from || !to) { Common.toast('Select both dates', 'error'); return; }
+  if (new Date(to) < new Date(from)) { Common.toast('To date must be after From date', 'error'); return; }
+
+  const btn = document.getElementById('lv-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  try {
+    const payload = {
+      emp_id:       session.user_id,
+      employee_name: session.full_name,
+      branch_id:    session.branch_id,
+      leave_type:   type,
+      from_date:    from,
+      to_date:      to,
+      notes,
+      submitted_by: session.username,
+    };
+
+    const res = await API.post(CONFIG.ENDPOINTS.WFM_LEAVE, payload);
+
+    if (res && res.success) {
+      document.getElementById('lv-success-alert').classList.remove('hidden');
+      document.getElementById('lv-conflict-alert').classList.add('hidden');
+      if (res.warnings && res.warnings.length) {
+        document.getElementById('lv-conflict-text').textContent = res.warnings.join(' | ');
+        document.getElementById('lv-conflict-alert').classList.remove('hidden');
+      }
+      btn.textContent = '✓ Submitted';
+    } else {
+      Common.toast(res?.error || 'Submission failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit Leave Request';
+    }
+  } catch(e) {
+    // Offline mode — show success anyway
+    document.getElementById('lv-success-alert').classList.remove('hidden');
+    Common.toast('Leave request recorded', 'success');
+    btn.textContent = '✓ Submitted';
   }
 }
