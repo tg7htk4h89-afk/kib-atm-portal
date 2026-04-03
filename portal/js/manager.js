@@ -30,24 +30,34 @@ function _startLiveClock() {
 }
 
 async function loadDashboard() {
-  const res = await API.getManagerDashboard(activeFilters);
+  let isLive = false;
+  let d = null;
 
-  // ── Accept response even when success flag is missing or false ──
-  // n8n sometimes returns data without a success:true wrapper
-  const raw = res || {};
-  dashboardData = raw.data || raw;
-  const d = dashboardData;
+  try {
+    const res = await API.getManagerDashboard(activeFilters);
+    const raw = res || {};
+    const candidate = raw.data || raw;
 
-  // If completely empty response — show error but don't block UI
-  if (!d || (!d.machines && !d.kpis && !d.summary)) {
-    Common.toast('Dashboard data unavailable — check n8n workflow.', 'warning');
-    // Clear spinner
-    const kpiGrid = document.getElementById('kpi-grid');
-    if (kpiGrid) kpiGrid.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-size:13px;grid-column:1/-1">⚠️ No data received from server. Please check n8n workflow is Published.</div>';
-    return;
+    // Accept if it has any real content
+    if (candidate && (candidate.machines || candidate.kpis || candidate.summary)) {
+      d = candidate;
+      isLive = true;
+    }
+  } catch(e) {
+    console.warn('Dashboard API failed:', e);
   }
 
-  document.getElementById('last-refresh-label').textContent = 'Last refreshed: ' + new Date().toLocaleTimeString('en-GB');
+  // ── Fall back to demo data if API unavailable ─────────────────────────────
+  if (!d) {
+    d = _buildDemoData();
+    _showDataModeBanner('demo');
+  } else {
+    _showDataModeBanner('live');
+  }
+
+  dashboardData = d;
+  document.getElementById('last-refresh-label').textContent =
+    'Last refreshed: ' + new Date().toLocaleTimeString('en-GB') + (isLive ? '' : ' (Demo)');
 
   _renderKPIs(d.kpis || d.summary || {});
   _renderStatusChart(d.status_summary || d.summary || {});
@@ -59,6 +69,140 @@ async function loadDashboard() {
   _renderRepeatedIssues(d.repeated_issues || d.repeated_machines || []);
   _renderVendorPerformance(d.vendor_performance || []);
   _populateFilterDropdowns(d.branches || [], d.vendors || []);
+}
+
+function _showDataModeBanner(mode) {
+  let banner = document.getElementById('data-mode-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'data-mode-banner';
+    const pageBody = document.querySelector('.page-body');
+    if (pageBody) pageBody.insertBefore(banner, pageBody.firstChild);
+  }
+  if (mode === 'live') {
+    banner.style.cssText = '';
+    banner.innerHTML = '';
+  } else {
+    banner.style.cssText = 'background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px';
+    banner.innerHTML = '⚠️ <strong>Demo Mode</strong> — n8n workflow not connected. Showing sample data. Import <strong>WF_Manager_Dashboard_v2.json</strong> into n8n and publish it to see live data.';
+  }
+}
+
+function _buildDemoData() {
+  // Realistic demo data matching KIB branch structure
+  const branches = [
+    {id:'BR-HO',name:'Head Office',area:'Area 1'},
+    {id:'BR-SA',name:'Salmiya',area:'Area 1'},
+    {id:'BR-SD',name:'Siddeeq',area:'Area 1'},
+    {id:'BR-FA',name:'Farwaniya',area:'Area 1'},
+    {id:'BR-AD',name:'Adailiya',area:'Area 1'},
+    {id:'BR-DA',name:'Daia',area:'Area 1'},
+    {id:'BR-EM',name:'Enmall',area:'Area 1'},
+    {id:'BR-WJ',name:'West Jahra',area:'Area 2'},
+    {id:'BR-JA',name:'Jaber Alahmad',area:'Area 2'},
+    {id:'BR-MI',name:'Ministry Complex',area:'Area 2'},
+    {id:'BR-MK',name:'Mubarak Al Kabeer',area:'Area 2'},
+    {id:'BR-SS',name:'Sabah Al Salem',area:'Area 2'},
+    {id:'BR-RM',name:'Remal Mall',area:'Area 2'},
+    {id:'BR-FI',name:'Fintas',area:'Area 2'},
+    {id:'BR-AH',name:'Ahmadi',area:'Area 2'},
+    {id:'BR-ZA',name:'Zahraa',area:'Area 2'},
+  ];
+
+  const statuses = ['GREEN','GREEN','GREEN','GREEN','GREEN','AMBER','AMBER','RED','GREY'];
+  const types    = ['ATM','ATM','ITM','Drive Through ATM'];
+  const vendors  = ['NCR Gulf','Diebold Nixdorf','ATM Team'];
+
+  const machines = [];
+  let mIdx = 1;
+  const testedToday = new Date().toISOString();
+  branches.forEach(b => {
+    const count = Math.floor(Math.random() * 3) + 1;
+    for (let i=0; i<count; i++) {
+      const st = statuses[Math.floor(Math.random()*statuses.length)];
+      const tested = st !== 'GREY';
+      machines.push({
+        machine_id: `M-${String(mIdx).padStart(3,'0')}`,
+        terminal_id: `TRM-${String(mIdx).padStart(4,'0')}`,
+        branch_id: b.id,
+        branch_name: b.name,
+        machine_type: types[Math.floor(Math.random()*types.length)],
+        current_status: st,
+        tested_today: tested ? 'TRUE' : 'FALSE',
+        last_tested_at: tested ? testedToday : '',
+        active_incident_id: st === 'RED' ? `INC-00${mIdx}` : '',
+        assigned_vendor_id: '',
+        location_description: `${b.name} Branch`,
+        manufacturer: 'NCR',
+        model: 'SelfServ 80',
+      });
+      mIdx++;
+    }
+  });
+
+  const total  = machines.length;
+  const green  = machines.filter(m=>m.current_status==='GREEN').length;
+  const amber  = machines.filter(m=>m.current_status==='AMBER').length;
+  const red    = machines.filter(m=>m.current_status==='RED').length;
+  const grey   = machines.filter(m=>m.current_status==='GREY').length;
+  const tested = machines.filter(m=>m.tested_today==='TRUE').length;
+
+  // Build open incidents for RED machines
+  const openIncidents = machines
+    .filter(m=>m.current_status==='RED')
+    .map((m,i) => ({
+      incident_id:          `INC-00${i+1}`,
+      machine_id:           m.machine_id,
+      terminal_id:          m.terminal_id,
+      branch_id:            m.branch_id,
+      branch_name:          m.branch_name,
+      status:               'Open',
+      severity:             'RED',
+      issue_category:       'Withdrawal',
+      assigned_vendor_name: 'ATM Team',
+      assigned_vendor_id:   'VND-ATM',
+      sla_hours:            4,
+      aging_minutes:        Math.floor(Math.random()*300)+30,
+      created_at:           new Date(Date.now()-Math.random()*86400000).toISOString(),
+      is_overdue:           Math.random() > 0.5,
+    }));
+
+  // 7-day trend
+  const trend_7d = [];
+  for (let i=6; i>=0; i--) {
+    const dt = new Date();
+    dt.setDate(dt.getDate()-i);
+    trend_7d.push({
+      date:     dt.toISOString().slice(0,10),
+      new_inc:  Math.floor(Math.random()*5),
+      resolved: Math.floor(Math.random()*4),
+    });
+  }
+
+  return {
+    success: true,
+    kpis: {
+      total_machines: total, green_count: green, amber_count: amber,
+      red_count: red, grey_count: grey, tested_today: tested,
+      not_tested: grey, open_incidents: openIncidents.length,
+      overdue_count: openIncidents.filter(i=>i.is_overdue).length,
+      resolved_today: 2, avg_aging_min: 87,
+    },
+    summary: { total_machines: total, green, amber, red, not_tested: grey },
+    status_summary: { green, amber, red, grey },
+    machines,
+    open_incidents:    openIncidents,
+    active_incidents:  openIncidents,
+    overdue_incidents: openIncidents.filter(i=>i.is_overdue),
+    not_tested_today:  machines.filter(m=>m.tested_today==='FALSE'),
+    trend_7d,
+    trend_7days: trend_7d,
+    branches:    branches.map(b=>({branch_id:b.id,branch_name:b.name,area:b.area})),
+    vendors:     [{vendor_id:'VND-NCR',vendor_name:'NCR Gulf'},{vendor_id:'VND-DIE',vendor_name:'Diebold Nixdorf'}],
+    vendor_performance: [],
+    repeated_machines:  [],
+    repeated_issues:    [],
+  };
 }
 
 function _renderKPIs(kpis) {
