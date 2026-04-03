@@ -30,8 +30,18 @@ const API = (() => {
         window.location.href = 'login.html?reason=unauthorized';
         return { success: false, message: 'Unauthorized' };
       }
-      const json = await res.json();
-      return json;
+      // Handle empty response body gracefully
+      const text = await res.text();
+      if (!text || text.trim() === '') {
+        console.warn('[API] Empty response from', path);
+        return { success: false, message: 'Empty response from server.' };
+      }
+      try {
+        return JSON.parse(text);
+      } catch (parseErr) {
+        console.error('[API] JSON parse error', path, parseErr, 'body:', text.slice(0,200));
+        return { success: false, message: 'Invalid response from server.' };
+      }
     } catch (err) {
       console.error('[API Error]', method, path, err);
       return { success: false, message: 'Network error. Please check your connection.' };
