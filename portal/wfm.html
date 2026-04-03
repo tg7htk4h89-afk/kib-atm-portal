@@ -1330,137 +1330,457 @@ function getMostAbsent(){ const counts={}; ABSENCE_LOG.forEach(a=>{counts[a.empl
 function calcNetworkFairnessScore(){ const counts=EMPLOYEES.map(e=>e.coverCount); const avg=counts.reduce((s,c)=>s+c,0)/counts.length; const variance=counts.reduce((s,c)=>s+Math.pow(c-avg,2),0)/counts.length; const stdDev=Math.sqrt(variance); return Math.max(0,Math.round(100-stdDev*10)); }
 
 // ══════════════════════════════════════════════════════════
-//   FAIRNESS ENGINE — CORE REPLACEMENT LOGIC
+//   KIB RBD FAIRNESS ENGINE v2 — REPLACEMENT SELECTION
+//   Algorithm:
+//     1. Filter: same area + same position + available + not absent/on-leave
+//     2. Priority 1: never covered → highest priority
+//     3. Priority 2: lowest cover count
+//     4. Priority 3: longest time since last cover (tie-break)
+//     5. Priority 4: employee ID (stable deterministic tie-break)
+//   Skip Preservation: unavailable employees keep their queue position
+//   Full audit log on every decision
 // ══════════════════════════════════════════════════════════
-function runReplacementEngine(){
-  const branchId=document.getElementById('rep-branch').value;
-  const position=document.getElementById('rep-position').value;
-  const date=document.getElementById('rep-date').value;
-  const crossArea=document.getElementById('rep-cross-area').value==='yes';
 
-  if(!branchId||!position||!date){toast('Please fill all fields','error');return;}
+// Persistent decision log — all replacement decisions this session
+const REPLACEMENT_DECISION_LOG = [];
 
-  const branch=BRANCHES.find(b=>b.id===branchId);
-  const results=rankReplacementCandidates(branch,position,date,crossArea);
-  renderReplacementResults(branch,position,date,results);
+function runReplacementEngine() {
+  const branchId  = document.getElementById('rep-branch').value;
+  const position  = document.getElementById('rep-position').value;
+  const date      = document.getElementById('rep-date').value;
+  const crossArea = document.getElementById('rep-cross-area').value === 'yes';
+
+  if (!branchId || !position || !date) {
+    toast('Please fill all required fields', 'error');
+    return;
+  }
+
+  const branch = BRANCHES.find(b => b.id === branchId);
+  if (!branch) return;
+
+  const result = selectReplacement(branch, position, date, crossArea);
+  renderReplacementResults(branch, position, date, result);
 }
 
-function rankReplacementCandidates(branch,position,date,crossArea){
-  let pool=EMPLOYEES.filter(e=>{
-    if(e.position!==position) return false; // POSITION MATCH
-    if(e.branch===branch.id) return false; // Must be from different branch
-    if(e.status!=='Available') return false; // AVAILABILITY CHECK
-    if(!crossArea&&e.area!==branch.area) return false; // AREA ELIGIBILITY
-    // Check not already on leave on this date
-    const onLeave=LEAVE_REQUESTS.some(l=>l.empId===e.id&&l.status==='Approved'&&date>=l.from&&date<=l.to);
-    if(onLeave) return false;
+// ── STEP 1: Main selection function ─────────────────────────────────────────
+function selectReplacement(branch, position, date, crossArea) {
+  const timestamp = new Date().toISOString();
+
+  // Build the full candidate pool — ALL employees with same position in scope
+  const allSameRole = EMPLOYEES.filter(e => {
+    if (e.position !== position)  return false; // Must match position exactly
+    if (e.id === branch.id)        return false; // Exclude absent employee if passed
+    if (!crossArea && e.area !== branch.area) return false; // Area scope
     return true;
   });
 
-  // Score each candidate using weighted ranking
-  const scored=pool.map(e=>{
-    let score=0; const reasons=[];
-
-    // A. Coverage Count Score (lower count = higher score)
-    const maxCover=Math.max(...EMPLOYEES.map(x=>x.coverCount))||1;
-    const coverScore=((maxCover-e.coverCount)/maxCover)*CONFIG.FAIRNESS_WEIGHTS.coverageCount;
-    score+=coverScore;
-    reasons.push(`Coverage count: ${e.coverCount} (${e.coverCount===0?'Never covered':'Lowest is better'})`);
-
-    // B. Days Since Last Cover Score (longer ago = higher score)
-    let daysSince=999;
-    if(e.lastCover){
-      const lc=new Date(e.lastCover); const d=new Date(date);
-      daysSince=Math.round((d-lc)/(1000*60*60*24));
-    }
-    const coverDayScore=Math.min(daysSince,90)/90*CONFIG.FAIRNESS_WEIGHTS.daysSinceLastCover;
-    score+=coverDayScore;
-    reasons.push(e.lastCover?`Last covered: ${daysSince} days ago`:'Never covered before — top priority');
-
-    // C. Skip Turn Preservation
-    if(e.skipCount>0){
-      score+=e.skipCount*CONFIG.FAIRNESS_WEIGHTS.skipTurn/2;
-      reasons.push(`Skip preserved: ${e.skipCount} previous unavailable skip(s)`);
-    }
-
-    // D. Branch Proximity (same area = bonus)
-    if(e.area===branch.area){
-      score+=CONFIG.FAIRNESS_WEIGHTS.proximity;
-      reasons.push('Same area — proximity bonus');
-    }
-
-    return {employee:e,score:Math.round(score),reasons,daysSince,rank:0};
+  // Classify each employee: eligible or ineligible (with reason)
+  const classified = allSameRole.map(e => {
+    const ineligReason = _getIneligibilityReason(e, branch, date);
+    return {
+      employee:    e,
+      eligible:    ineligReason === null,
+      skipReason:  ineligReason,     // null if eligible
+    };
   });
 
-  // Sort descending by score
-  scored.sort((a,b)=>b.score-a.score);
-  scored.forEach((s,i)=>s.rank=i+1);
+  const eligible   = classified.filter(c => c.eligible).map(c => c.employee);
+  const ineligible = classified.filter(c => !c.eligible);
 
-  return scored;
+  // Rank eligible employees using strict fairness priority
+  const ranked = _rankByFairness(eligible, date);
+
+  // Build full audit record
+  const decisionRecord = {
+    id:           `DEC-${Date.now()}`,
+    timestamp,
+    branch_id:    branch.id,
+    branch_name:  branch.name,
+    position,
+    date,
+    cross_area:   crossArea,
+    candidate_pool_size: allSameRole.length,
+    eligible_count:      eligible.length,
+    ineligible_count:    ineligible.length,
+    ranked_candidates:   ranked.map((r, i) => ({
+      rank:        i + 1,
+      emp_id:      r.employee.id,
+      name:        r.employee.name,
+      cover_count: r.employee.coverCount,
+      last_cover:  r.employee.lastCover || 'Never',
+      skip_count:  r.employee.skipCount,
+      score:       r.priorityScore,
+      reasons:     r.reasons,
+    })),
+    skipped_ineligible:  ineligible.map(c => ({
+      emp_id:      c.employee.id,
+      name:        c.employee.name,
+      skip_reason: c.skipReason,
+    })),
+    selected:     ranked.length > 0 ? {
+      emp_id: ranked[0].employee.id,
+      name:   ranked[0].employee.name,
+    } : null,
+  };
+
+  REPLACEMENT_DECISION_LOG.unshift(decisionRecord);
+
+  return {
+    ranked,
+    ineligible,
+    decisionRecord,
+    hasResult: ranked.length > 0,
+  };
 }
 
-function renderReplacementResults(branch,position,date,results){
-  const panel=document.getElementById('replacement-panel-result');
-  if(!results.length){
-    panel.innerHTML=`<div class="card"><div class="card-body" style="text-align:center;padding:40px">
-      <div style="font-size:36px;margin-bottom:12px">😔</div>
-      <div style="font-weight:700;font-size:15px;margin-bottom:6px">No Eligible Candidates</div>
-      <div style="color:var(--text-muted);font-size:13px">No available ${position} found for ${branch.name} on ${date}.<br>Consider enabling cross-area search or checking leave plans.</div>
-    </div></div>`; return;
+// ── STEP 2: Ineligibility checker ───────────────────────────────────────────
+// Returns null if eligible, or a string reason if not eligible
+function _getIneligibilityReason(emp, branch, date) {
+  // Rule 1: Cannot cover own branch
+  if (emp.branch === branch.id)
+    return 'Same branch as the required coverage location';
+
+  // Rule 2: Must be available (not absent/on leave/already assigned)
+  if (emp.status === 'Absent')
+    return 'Currently marked absent';
+  if (emp.status === 'On Leave')
+    return 'Currently on leave';
+  if (emp.status === 'On Assignment')
+    return 'Already assigned to another coverage';
+  if (emp.status === 'Unavailable')
+    return 'Marked unavailable';
+
+  // Rule 3: Not on approved leave on the requested date
+  const onLeave = LEAVE_REQUESTS.some(l =>
+    l.empId === emp.id &&
+    l.status === 'Approved' &&
+    date >= l.from &&
+    date <= l.to
+  );
+  if (onLeave)
+    return `On approved leave on ${date}`;
+
+  // Rule 4: Not already in an open absence case on this date
+  const alreadyAbsent = ABSENCE_LOG.some(a =>
+    a.empId === emp.id &&
+    a.status === 'Open' &&
+    a.start === date
+  );
+  if (alreadyAbsent)
+    return 'Has an open absence record on this date';
+
+  return null; // ← eligible
+}
+
+// ── STEP 3: Strict fairness ranking ─────────────────────────────────────────
+// Priority 1: never covered (coverCount === 0)  → highest
+// Priority 2: lowest coverCount
+// Priority 3: longest time since last cover (daysSince DESC)
+// Priority 4: employee ID (alphabetical, stable)
+function _rankByFairness(eligibleEmployees, date) {
+  if (!eligibleEmployees.length) return [];
+
+  const withMetrics = eligibleEmployees.map(e => {
+    const coverCount = e.coverCount || 0;
+    const neverCovered = coverCount === 0;
+
+    // Days since last cover (9999 = never covered → treated as longest possible)
+    let daysSince = 9999;
+    if (e.lastCover) {
+      daysSince = Math.max(0, Math.round(
+        (new Date(date) - new Date(e.lastCover)) / (1000 * 60 * 60 * 24)
+      ));
+    }
+
+    // Skip count bonus — preserves fairness for previously unavailable employees
+    const skipBonus = e.skipCount || 0;
+
+    // Build priority score:
+    // P1: Never covered gets very high base (10000)
+    // P2: Lower cover count = higher score (inverted, scaled)
+    // P3: More days since last cover = higher score
+    // P4: Lower emp ID = slightly higher (stable tie-break)
+    const maxCoverInPool = Math.max(...eligibleEmployees.map(x => x.coverCount), 1);
+    const p1 = neverCovered ? 10000 : 0;
+    const p2 = (maxCoverInPool - coverCount) * 100;
+    const p3 = Math.min(daysSince, 365); // cap at 1 year
+    const p4Skip = skipBonus * 50;       // skip preservation boost
+    const p5 = -(e.id || '').charCodeAt(0); // deterministic tie-break (lower ID = higher)
+
+    const priorityScore = p1 + p2 + p3 + p4Skip + p5;
+
+    // Build human-readable explanation
+    const reasons = [];
+    if (neverCovered) {
+      reasons.push('✦ Never covered before — top priority');
+    } else {
+      reasons.push(`Cover count: ${coverCount} (lower = higher priority)`);
+    }
+    if (e.lastCover) {
+      reasons.push(`Last covered: ${daysSince} day${daysSince !== 1 ? 's' : ''} ago`);
+    } else {
+      reasons.push('No previous coverage on record');
+    }
+    if (skipBonus > 0) {
+      reasons.push(`Skip-turn preserved: ${skipBonus} time${skipBonus > 1 ? 's' : ''} previously unavailable`);
+    }
+
+    return { employee: e, coverCount, neverCovered, daysSince, skipBonus, priorityScore, reasons };
+  });
+
+  // Sort: highest priorityScore first
+  // Tie-break: lower employee ID (alphabetical) → deterministic, not random
+  withMetrics.sort((a, b) => {
+    if (b.priorityScore !== a.priorityScore)
+      return b.priorityScore - a.priorityScore;
+    // Stable tie-break: alphabetical by employee ID
+    return (a.employee.id || '').localeCompare(b.employee.id || '');
+  });
+
+  return withMetrics;
+}
+
+// ── STEP 4: Render results ───────────────────────────────────────────────────
+function renderReplacementResults(branch, position, date, result) {
+  const panel = document.getElementById('replacement-panel-result');
+  const { ranked, ineligible, decisionRecord, hasResult } = result;
+
+  if (!hasResult) {
+    // Show all ineligible candidates so manager understands why no result
+    const ineligHtml = ineligible.length
+      ? `<div style="margin-top:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">ALL CANDIDATES CHECKED — NONE ELIGIBLE:</div>
+          ${ineligible.map(c=>`
+            <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red-bg);border-radius:6px;margin-bottom:4px;font-size:12px">
+              <span style="font-weight:600">${c.employee.name}</span>
+              <span style="color:var(--red)">${c.skipReason}</span>
+            </div>`).join('')}
+        </div>` : '';
+
+    panel.innerHTML = `<div class="card"><div class="card-body" style="text-align:center;padding:40px">
+      <div style="font-size:36px;margin-bottom:12px">⚠️</div>
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px">No Eligible Candidates Found</div>
+      <div style="color:var(--text-muted);font-size:13px">No available ${position} found for ${branch.name} on ${date}.</div>
+      ${ineligHtml}
+    </div></div>`;
+    return;
   }
 
-  const top=results[0];
-  let html=`
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header" style="background:var(--green-bg);border-bottom-color:#86efac">
-        <div><div class="card-title" style="color:var(--green)">🏆 Best Match Found</div>
-        <div class="card-subtitle">${position} replacement for ${branch.name} on ${date}</div></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-success" onclick="assignReplacement('${top.employee.id}','${branch.id}','${position}','${date}')">Assign ${top.employee.name.split(' ')[0]}</button>
+  const top = ranked[0];
+
+  // ── Top recommendation card ──
+  let html = `
+    <div class="card" style="margin-bottom:16px;border:2px solid var(--status-green)">
+      <div class="card-header" style="background:var(--status-green-bg)">
+        <div>
+          <div class="card-title" style="color:var(--status-green)">🏆 Recommended Replacement</div>
+          <div class="card-subtitle">${position} for ${branch.name} — ${date}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-success" onclick="confirmAssignment('${top.employee.id}','${branch.id}','${position}','${date}','${decisionRecord.id}')">
+            ✓ Assign ${top.employee.name.split(' ')[0]}
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="openOverrideModal('${branch.id}','${position}','${date}')">Override</button>
         </div>
       </div>
       <div class="card-body">
-        <div class="rank-card rank-1">
-          <div class="rank-header">
-            <div class="rank-num r1">1</div>
-            <div>
-              <div class="rank-name">${top.employee.name}</div>
-              <div class="rank-branch">${top.employee.branch} • ${top.employee.area} • Score: ${top.score}/100</div>
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--status-green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0">
+            ${top.employee.name.split(' ').map(w=>w[0]).join('').slice(0,2)}
+          </div>
+          <div style="flex:1">
+            <div style="font-size:15px;font-weight:700">${top.employee.name}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+              ${top.employee.position} • ${BRANCHES.find(b=>b.id===top.employee.branch)?.name||top.employee.branch} • ${top.employee.area}
             </div>
-            <div style="margin-left:auto;text-align:right">
-              <div style="font-size:18px;font-weight:700;color:var(--green)">${top.score}</div>
-              <div style="font-size:10px;color:var(--text-muted)">Fairness Score</div>
+            <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">
+                ${top.neverCovered ? '⭐ Never Covered' : `${top.coverCount} cover${top.coverCount!==1?'s':''}`}
+              </span>
+              <span style="background:#f0fdf4;color:var(--status-green);padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">
+                ${top.daysSince===9999?'No previous cover':top.daysSince+' days since last cover'}
+              </span>
+              ${top.skipBonus>0?`<span style="background:#fffbeb;color:var(--status-amber);padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">⏮ ${top.skipBonus} skips preserved</span>`:''}
+            </div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Why this person:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              ${top.reasons.map(r=>`<span style="background:rgba(29,111,187,0.08);color:var(--accent);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${r}</span>`).join('')}
             </div>
           </div>
-          <div><div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px">WHY THIS CANDIDATE:</div>
-          <div class="rank-reasons">${top.reasons.map(r=>`<span class="rank-reason">✓ ${r}</span>`).join('')}</div></div>
+          <div style="text-align:center;flex-shrink:0">
+            <div style="font-size:24px;font-weight:700;color:var(--status-green)">#1</div>
+            <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase">Priority</div>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">📋 All Ranked Candidates (${results.length})</div></div>
-      <div class="card-body" style="padding:12px">`;
-
-  results.forEach((r,i)=>{
-    if(i===0) return; // Skip #1 already shown
-    const cls=i===1?'rank-2':i===2?'rank-3':'';
-    const numCls=i===1?'r2':i===2?'r3':'';
-    html+=`<div class="rank-card ${cls}" style="margin-bottom:8px">
-      <div class="rank-header">
-        <div class="rank-num ${numCls}" style="${i>2?'background:var(--border);color:var(--text-sec)':''}">${r.rank}</div>
-        <div><div class="rank-name">${r.employee.name}</div><div class="rank-branch">${r.employee.branch} • ${r.employee.area}</div></div>
-        <div style="margin-left:auto;font-weight:700;font-size:14px">${r.score}</div>
-        <button class="btn btn-sm btn-secondary" style="margin-left:8px" onclick="assignReplacement('${r.employee.id}','${branch.id}','${position}','${date}')">Select</button>
-      </div>
-      <div class="rank-reasons">${r.reasons.slice(0,2).map(rr=>`<span class="rank-reason">✓ ${rr}</span>`).join('')}</div>
     </div>`;
-  });
 
-  html+='</div></div>';
-  panel.innerHTML=html;
+  // ── All candidates table ──
+  html += `<div class="card" style="margin-bottom:16px">
+    <div class="card-header">
+      <div class="card-title">📋 All Eligible Candidates (${ranked.length})</div>
+      <div style="font-size:11px;color:var(--text-muted)">Ranked by fairness algorithm</div>
+    </div>
+    <div class="card-body-tight">
+      <table class="data-table">
+        <thead><tr>
+          <th>Rank</th><th>Name</th><th>Branch</th>
+          <th style="text-align:center">Cover Count</th>
+          <th style="text-align:center">Last Cover</th>
+          <th style="text-align:center">Skips</th>
+          <th>Priority Reason</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${ranked.map((r, i) => `<tr style="${i===0?'background:var(--status-green-bg)':''}">
+            <td><span style="font-weight:700;font-size:13px;color:${i===0?'var(--status-green)':i===1?'var(--accent)':'var(--text-muted)'}">#${i+1}</span></td>
+            <td><span style="font-weight:600;font-size:12px">${r.employee.name}</span></td>
+            <td style="font-size:11px">${BRANCHES.find(b=>b.id===r.employee.branch)?.name||r.employee.branch}</td>
+            <td style="text-align:center">
+              <span style="font-weight:700;color:${r.neverCovered?'var(--status-green)':r.coverCount>4?'var(--status-red)':'var(--text)'}">
+                ${r.neverCovered?'⭐ 0':r.coverCount}
+              </span>
+            </td>
+            <td style="text-align:center;font-size:11px;font-family:var(--font-mono)">
+              ${r.employee.lastCover||'—'}
+            </td>
+            <td style="text-align:center">
+              ${r.skipBonus>0?`<span style="color:var(--status-amber);font-weight:700">${r.skipBonus}</span>`:'<span style="color:var(--text-muted)">0</span>'}
+            </td>
+            <td style="font-size:10px;color:var(--text-muted);max-width:180px">${r.reasons[0]||''}</td>
+            <td>
+              ${i>0?`<button class="btn btn-sm btn-secondary" onclick="confirmAssignment('${r.employee.id}','${BRANCHES.find(b=>b.id===r.employee.branch)?.id||''}','${r.employee.position}','${date}','${decisionRecord.id}')">Select</button>`:'<span style="font-size:11px;color:var(--status-green);font-weight:700">✓ Recommended</span>'}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // ── Ineligible / skipped candidates ──
+  if (ineligible.length) {
+    html += `<div class="card">
+      <div class="card-header">
+        <div class="card-title" style="color:var(--text-muted)">⚪ Ineligible Candidates (${ineligible.length})</div>
+        <div style="font-size:11px;color:var(--text-muted)">These employees were considered but excluded</div>
+      </div>
+      <div class="card-body-tight">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Branch</th><th>Cover Count</th><th>Reason Not Eligible</th></tr></thead>
+          <tbody>
+            ${ineligible.map(c=>`<tr>
+              <td style="font-size:12px;color:var(--text-muted)">${c.employee.name}</td>
+              <td style="font-size:11px;color:var(--text-muted)">${BRANCHES.find(b=>b.id===c.employee.branch)?.name||c.employee.branch}</td>
+              <td style="font-size:12px;color:var(--text-muted)">${c.employee.coverCount}</td>
+              <td><span style="background:var(--status-red-bg);color:var(--status-red);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${c.skipReason}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  panel.innerHTML = html;
 }
 
+// ── STEP 5: Confirm assignment with full audit ──────────────────────────────
+function confirmAssignment(empId, branchId, position, date, decisionId) {
+  const emp    = EMPLOYEES.find(e => e.id === empId);
+  const branch = BRANCHES.find(b => b.id === branchId);
+  if (!emp || !branch) return;
+
+  // Update employee state
+  emp.coverCount++;
+  emp.lastCover = date;
+  emp.status    = 'On Assignment';
+
+  // Increment skip count for employees ranked higher who were NOT selected
+  // (Only if they were eligible — preserves fair rotation)
+  const record = REPLACEMENT_DECISION_LOG.find(d => d.id === decisionId);
+  if (record) {
+    record.ranked_candidates.forEach((c, idx) => {
+      if (c.emp_id !== empId) {
+        // This employee was passed over — if they were #1 but not selected, preserve their turn
+        const skippedEmp = EMPLOYEES.find(e => e.id === c.emp_id);
+        if (skippedEmp && idx === 0 && c.emp_id !== empId) {
+          // Top ranked employee was not selected — this is an override or manager choice
+          skippedEmp.skipCount = (skippedEmp.skipCount || 0) + 1;
+        }
+      }
+    });
+    record.final_assignment = { emp_id: empId, name: emp.name, assigned_at: new Date().toISOString() };
+  }
+
+  // Log to coverage history
+  COVERAGE_HISTORY.unshift({
+    date,
+    covered:     '—',
+    replacement: emp.name,
+    branch:      branch.name,
+    position,
+    duration:    1,
+    status:      'Assigned',
+    reason:      'Absence coverage',
+    decision_id: decisionId,
+  });
+
+  // Full audit entry
+  addAuditEntry(
+    'ReplacementAssigned',
+    `${emp.name} assigned → ${branch.name} (${position}) on ${date} | Decision ID: ${decisionId} | Cover count now: ${emp.coverCount}`
+  );
+
+  toast(`✅ ${emp.name} assigned successfully!`, 'success');
+  renderQueueState();
+
+  // Refresh panel to show confirmed state
+  document.getElementById('replacement-panel-result').innerHTML = `
+    <div class="card" style="border:2px solid var(--status-green)">
+      <div class="card-body" style="text-align:center;padding:40px">
+        <div style="font-size:40px;margin-bottom:12px">✅</div>
+        <div style="font-size:16px;font-weight:700;color:var(--status-green);margin-bottom:8px">Assignment Confirmed</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+          <strong>${emp.name}</strong> has been assigned to cover<br>
+          <strong>${position}</strong> at <strong>${branch.name}</strong> on <strong>${date}</strong>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">
+          Decision ID: ${decisionId}<br>
+          Cover count: ${emp.coverCount} total assignments
+        </div>
+      </div>
+    </div>`;
+}
+
+let pendingAssignment = null;
+function openOverrideModal(branchId, position, date) {
+  pendingAssignment = { branchId, position, date };
+  openModal('modal-override');
+}
+
+// Keep legacy assignReplacement for backward compat
+function assignReplacement(empId, branchId, position, date) {
+  confirmAssignment(empId, branchId, position, date, 'MANUAL-'+Date.now());
+}
+
+function confirmOverride() {
+  const reason = document.getElementById('override-reason').value.trim();
+  const empId  = document.getElementById('override-employee').value;
+  if (!reason) { toast('Reason is required for override', 'error'); return; }
+  if (!empId)  { toast('Select an employee', 'error'); return; }
+  if (!pendingAssignment) return;
+
+  const { branchId, position, date } = pendingAssignment;
+  const decId = 'OVR-' + Date.now();
+
+  addAuditEntry('ReplacementOverridden',
+    `OVERRIDE — Selected: ${empId} | Branch: ${branchId} | Position: ${position} | Date: ${date} | Reason: ${reason}`
+  );
+
+  confirmAssignment(empId, branchId, position, date, decId);
+
+  toast('⚠️ Override logged and assigned', 'warning');
+  closeModal('modal-override');
+  pendingAssignment = null;
+}
 let pendingAssignment=null;
 function openOverrideModal(branchId,position,date){
   pendingAssignment={branchId,position,date};
