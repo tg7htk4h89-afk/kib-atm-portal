@@ -31,24 +31,34 @@ function _startLiveClock() {
 
 async function loadDashboard() {
   const res = await API.getManagerDashboard(activeFilters);
-  if (!res.success) {
-    Common.toast('Failed to load dashboard data.', 'error');
+
+  // ── Accept response even when success flag is missing or false ──
+  // n8n sometimes returns data without a success:true wrapper
+  const raw = res || {};
+  dashboardData = raw.data || raw;
+  const d = dashboardData;
+
+  // If completely empty response — show error but don't block UI
+  if (!d || (!d.machines && !d.kpis && !d.summary)) {
+    Common.toast('Dashboard data unavailable — check n8n workflow.', 'warning');
+    // Clear spinner
+    const kpiGrid = document.getElementById('kpi-grid');
+    if (kpiGrid) kpiGrid.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-size:13px;grid-column:1/-1">⚠️ No data received from server. Please check n8n workflow is Published.</div>';
     return;
   }
-  dashboardData = res.data || res;
-  const d = dashboardData;
+
   document.getElementById('last-refresh-label').textContent = 'Last refreshed: ' + new Date().toLocaleTimeString('en-GB');
 
-  _renderKPIs(d.kpis);
-  _renderStatusChart(d.status_summary || d.summary);
-  _renderTrendChart(d.trend_7d || d.trend_7days);
-  _renderOverdue(d.overdue_incidents);
-  _renderNotTested(d.not_tested_today);
-  _renderMachineGrid(d.machines);
-  _renderIncidentTable(d.open_incidents || d.active_incidents);
-  _renderRepeatedIssues(d.repeated_issues || d.repeated_machines);
-  _renderVendorPerformance(d.vendor_performance);
-  _populateFilterDropdowns(d.branches, d.vendors);
+  _renderKPIs(d.kpis || d.summary || {});
+  _renderStatusChart(d.status_summary || d.summary || {});
+  _renderTrendChart(d.trend_7d || d.trend_7days || []);
+  _renderOverdue(d.overdue_incidents || []);
+  _renderNotTested(d.not_tested_today || []);
+  _renderMachineGrid(d.machines || []);
+  _renderIncidentTable(d.open_incidents || d.active_incidents || []);
+  _renderRepeatedIssues(d.repeated_issues || d.repeated_machines || []);
+  _renderVendorPerformance(d.vendor_performance || []);
+  _populateFilterDropdowns(d.branches || [], d.vendors || []);
 }
 
 function _renderKPIs(kpis) {
