@@ -466,9 +466,14 @@ async function submitChecklist() {
 
 // ── Image Upload Helper ──────────────────────────────────────────────────────
 async function _uploadChecklistImages(imagesToUpload, machine, incidentId, submissionId, branchId, session) {
-  if (!imagesToUpload || !imagesToUpload.length) return;
+  console.log('[IMG] _uploadChecklistImages called, count:', imagesToUpload?.length);
+  if (!imagesToUpload || !imagesToUpload.length) {
+    console.warn('[IMG] No images to upload — returning early');
+    return;
+  }
 
   // Convert all File objects to base64
+  console.log('[IMG] Converting', imagesToUpload.length, 'image(s) to base64...');
   const base64Images = await Promise.all(imagesToUpload.map(file =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -476,12 +481,13 @@ async function _uploadChecklistImages(imagesToUpload, machine, incidentId, submi
         filename:  file.name,
         mime_type: file.type,
         size_kb:   Math.round(file.size / 1024),
-        data:      e.target.result.split(',')[1] // strip data:image/...;base64, prefix
+        data:      e.target.result.split(',')[1]
       });
       reader.onerror = reject;
       reader.readAsDataURL(file);
     })
   ));
+  console.log('[IMG] Base64 ready, sizes:', base64Images.map(i => i.size_kb + 'kb').join(', '));
 
   const uploadPayload = {
     incident_id:   incidentId   || '',
@@ -494,11 +500,17 @@ async function _uploadChecklistImages(imagesToUpload, machine, incidentId, submi
     uploaded_at:   new Date().toISOString(),
   };
 
-  const res = await API.post(CONFIG.ENDPOINTS.UPLOAD_IMAGE, uploadPayload);
-  if (res && res.success) {
-    console.log(`[branch] ${res.uploaded || base64Images.length} image(s) uploaded to Drive`);
-  } else {
-    console.warn('[branch] Image upload response:', res);
+  console.log('[IMG] Posting to', CONFIG.ENDPOINTS.UPLOAD_IMAGE, '— machine:', uploadPayload.machine_id, 'incident:', uploadPayload.incident_id);
+  try {
+    const res = await API.post(CONFIG.ENDPOINTS.UPLOAD_IMAGE, uploadPayload);
+    console.log('[IMG] Upload response:', JSON.stringify(res));
+    if (res && res.success) {
+      console.log('[IMG] SUCCESS —', res.uploaded, 'image(s) saved to Drive');
+    } else {
+      console.warn('[IMG] FAILED — response:', res);
+    }
+  } catch(e) {
+    console.error('[IMG] Exception during upload:', e);
   }
 }
 
