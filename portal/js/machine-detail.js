@@ -1,6 +1,13 @@
 /**
  * machine-detail.js — KIB RBD ATM Portal
  * No ES module imports — uses global Auth, API, Common
+ *
+ * Fixes applied:
+ *  1. Last Checklist: fetched via /incident-details on the active incident
+ *     (since /machine-detail n8n workflow does not exist yet)
+ *  2. Date formatting: robust _fmtDate() handles Google Sheets serial numbers,
+ *     M/D/YYYY strings, ISO strings, and empty values — no more .slice(0,10) bugs
+ *  3. Removed Math.random() stats in fallback (replaced with real zeros)
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -20,17 +27,56 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadMachineDetail(machineId);
 });
 
+// ── Date Formatter ───────────────────────────────────────────────────────────
+// Handles: Google Sheets serial number, "M/D/YYYY HH:MM:SS", ISO, plain strings
+function _fmtDate(val, includeTime) {
+  if (val === null || val === undefined || val === '' || val === '—') return '—';
+
+  let d;
+
+  // Google Sheets serial date (number like 46015)
+  if (typeof val === 'number') {
+    d = new Date((val - 25569) * 86400 * 1000);
+
+  // Sheets sometimes returns date as string serial
+  } else if (typeof val === 'string' && /^\d{5}(\.\d+)?$/.test(val.trim())) {
+    d = new Date((parseFloat(val) - 25569) * 86400 * 1000);
+
+  } else {
+    // Try native parsing (handles ISO and M/D/YYYY H:MM:SS)
+    d = new Date(val);
+  }
+
+  if (isNaN(d.getTime())) {
+    // Last resort: return first 10 chars of whatever we have
+    return String(val).slice(0, 10) || '—';
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const mm   = pad(d.getMonth() + 1);
+  const dd   = pad(d.getDate());
+
+  if (!includeTime) return `${yyyy}-${mm}-${dd}`;
+
+  const hh  = pad(d.getHours());
+  const min = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 // ── Load ────────────────────────────────────────────────────────────────────
 async function loadMachineDetail(machineId) {
   let data = null;
 
-  // Try n8n API first
+  // Try dedicated /machine-detail endpoint first (when n8n workflow exists)
   try {
     const res = await API.getMachineDetail(machineId);
     if (res && res.machine) data = res;
-  } catch(e) {}
+  } catch(e) {
+    console.warn('[machine-detail] /machine-detail endpoint unavailable, using fallback');
+  }
 
-  // Fallback: build from dashboard data if API fails
+  // Fallback: build from dashboard + incident-details
   if (!data) {
     data = await _buildFromDashboard(machineId);
   }
@@ -42,11 +88,9 @@ async function loadMachineDetail(machineId) {
 
   const m = data.machine;
 
-  // Update page title
   document.getElementById('machinePageTitle').textContent =
     `${m.terminal_id || machineId} — ${m.branch_name || ''}`;
 
-  // Hide loading, show content
   const loading = document.getElementById('loadingSection');
   const content = document.getElementById('machineDetailSections');
   if (loading) loading.style.display = 'none';
@@ -59,20 +103,18 @@ async function loadMachineDetail(machineId) {
   _renderIncidentHistory(data.incident_history || []);
 }
 
-// ── Build from dashboard data (fallback) ────────────────────────────────────
+// ── Build from dashboard + incident-details (fallback) ──────────────────────
 async function _buildFromDashboard(machineId) {
   try {
     const res = await API.getManagerDashboard({});
     const raw = res?.data || res || {};
 
-    // Try to find machine in dashboard data
     const machines = raw.machines || [];
     const machine  = machines.find(m =>
       m.machine_id === machineId || m.terminal_id === machineId
     );
 
     if (!machine) {
-      // Build minimal demo machine
       return {
         machine: {
           machine_id: machineId,
@@ -87,7 +129,7 @@ async function _buildFromDashboard(machineId) {
           model: '—',
           location_description: '—',
         },
-        stats: { total_checks_30d:0, total_incidents:0, open_incidents:0, avg_resolution_hours:0, uptime_percent:0 },
+        stats: { total_checks_30d: 0, total_incidents: 0, open_incidents: 0, avg_resolution_hours: 0, uptime_percent: 0 },
         current_incident: null,
         last_checklist: null,
         incident_history: [],
@@ -96,32 +138,77 @@ async function _buildFromDashboard(machineId) {
 
     // Find active incident for this machine
     const allIncidents = raw.open_incidents || raw.active_incidents || [];
-    const activeInc = allIncidents.find(i => i.machine_id === machine.machine_id) || null;
+    const machineIncidents = allIncidents.filter(i =>
+      i.machine_id === machine.machine_id || i.machine_id === machineId
+    );
+    const activeInc = machineIncidents[0] || null;
+
+    // ── Fetch last checklist via /incident-details ──────────────────────────
+    // If there's an active incident, its checklist items are the last checklist.
+    // /incident-details returns: { incident, checklist_items: [...], ... }
+    let lastChecklist = null;
+    if (activeInc && activeInc.incident_id) {
+      try {
+        const incRes = await API.getIncidentDetails(activeInc.incident_id);
+        const incData = incRes?.data || incRes || {};
+
+        // Support both array-at-root and nested key
+        const rawItems = incData.checklist_items || incData.items || [];
+
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          lastChecklist = {
+            submitted_at:  activeInc.created_at || '',
+            submitted_by:  incData.incident?.submitted_by || incData.submitted_by || '—',
+            items: rawItems.map(item => ({
+              item_name: item.item_name || item.check_name || item.name || '—',
+              result:    item.result    || item.status    || '—',
+              notes:     item.notes    || item.note       || '',
+            })),
+          };
+        }
+      } catch(e) {
+        console.warn('[machine-detail] Could not fetch checklist from incident-details:', e);
+      }
+    }
+
+    // ── Build incident history list ─────────────────────────────────────────
+    // Normalize fields so the renderer always gets consistent keys
+    const incidentHistory = machineIncidents.map(i => ({
+      incident_id:         i.incident_id,
+      severity:            i.severity,
+      status:              i.status,
+      issue_category:      i.issue_category || i.category || '—',
+      assigned_vendor_name: i.assigned_vendor_name || i.assigned_vendor || 'ATM Team',
+      created_at:          i.created_at,
+    }));
 
     return {
       machine,
       stats: {
-        total_checks_30d: Math.floor(Math.random()*28)+2,
-        total_incidents:  allIncidents.filter(i=>i.machine_id===machine.machine_id).length,
-        open_incidents:   activeInc ? 1 : 0,
-        avg_resolution_hours: 3,
-        uptime_percent: machine.current_status==='GREEN' ? 98 : machine.current_status==='RED' ? 72 : 88,
+        total_checks_30d:      machine.checks_30d       ?? 0,
+        total_incidents:       machineIncidents.length,
+        open_incidents:        activeInc ? 1 : 0,
+        avg_resolution_hours:  machine.avg_resolution_hours ?? 0,
+        uptime_percent:        machine.uptime_percent
+                                 ?? (machine.current_status === 'GREEN' ? 98
+                                   : machine.current_status === 'RED'   ? 72 : 88),
       },
       current_incident: activeInc ? {
-        incident_id:      activeInc.incident_id,
-        status:           activeInc.status,
-        severity:         activeInc.severity,
-        issue_category:   activeInc.issue_category,
-        assigned_vendor:  activeInc.assigned_vendor_name,
-        created_at:       activeInc.created_at,
-        aging_minutes:    activeInc.aging_minutes,
-        is_overdue:       activeInc.is_overdue,
+        incident_id:    activeInc.incident_id,
+        status:         activeInc.status,
+        severity:       activeInc.severity,
+        issue_category: activeInc.issue_category || activeInc.category || '—',
+        assigned_vendor: activeInc.assigned_vendor_name || activeInc.assigned_vendor || 'ATM Team',
+        created_at:     activeInc.created_at,
+        aging_minutes:  activeInc.aging_minutes,
+        is_overdue:     activeInc.is_overdue,
       } : null,
-      last_checklist: null,
-      incident_history: activeInc ? [activeInc] : [],
+      last_checklist: lastChecklist,
+      incident_history: incidentHistory,
     };
+
   } catch(e) {
-    console.error('Dashboard fallback failed:', e);
+    console.error('[machine-detail] Dashboard fallback failed:', e);
     return null;
   }
 }
@@ -132,7 +219,7 @@ function _renderMachineInfo(m) {
   if (!el) return;
 
   const statusColors = { GREEN:'#16a34a', AMBER:'#d97706', RED:'#dc2626', GREY:'#6b7280' };
-  const st = (m.current_status||'GREY').toUpperCase();
+  const st  = (m.current_status || 'GREY').toUpperCase();
   const clr = statusColors[st] || '#6b7280';
 
   el.innerHTML = `
@@ -147,19 +234,19 @@ function _renderMachineInfo(m) {
       </div>
       <div style="display:flex;gap:8px">
         <span style="padding:4px 10px;background:${m.tested_today==='TRUE'?'#f0fdf4':'#f9fafb'};color:${m.tested_today==='TRUE'?'#16a34a':'#6b7280'};border:1px solid ${m.tested_today==='TRUE'?'#86efac':'#e5e7eb'};border-radius:6px;font-size:12px;font-weight:600">
-          ${m.tested_today==='TRUE'?'✓ Tested Today':'⬜ Not Tested'}
+          ${m.tested_today === 'TRUE' ? '✓ Tested Today' : '⬜ Not Tested'}
         </span>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
-      ${_infoRow('Branch', m.branch_name||'—')}
-      ${_infoRow('Machine ID', m.machine_id||'—')}
-      ${_infoRow('Terminal ID', m.terminal_id||'—')}
-      ${_infoRow('Type', m.machine_type||'—')}
-      ${_infoRow('Manufacturer', m.manufacturer||'—')}
-      ${_infoRow('Model', m.model||'—')}
-      ${_infoRow('Location', m.location_description||'—')}
-      ${_infoRow('Last Tested', m.last_tested_at ? m.last_tested_at.slice(0,16).replace('T',' ') : '—')}
+      ${_infoRow('Branch',       m.branch_name         || '—')}
+      ${_infoRow('Machine ID',   m.machine_id          || '—')}
+      ${_infoRow('Terminal ID',  m.terminal_id         || '—')}
+      ${_infoRow('Type',         m.machine_type        || '—')}
+      ${_infoRow('Manufacturer', m.manufacturer        || '—')}
+      ${_infoRow('Model',        m.model               || '—')}
+      ${_infoRow('Location',     m.location_description|| '—')}
+      ${_infoRow('Last Tested',  _fmtDate(m.last_tested_at, true))}
     </div>`;
 }
 
@@ -178,11 +265,11 @@ function _renderStats(stats) {
   el.innerHTML = `
     <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">Activity Statistics</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px">
-      ${_statItem(stats.total_checks_30d??'—', 'Checks (30d)')}
-      ${_statItem(stats.total_incidents??'—', 'Total Incidents')}
-      ${_statItem(stats.open_incidents??'—', 'Open Now')}
-      ${_statItem(stats.avg_resolution_hours!=null?stats.avg_resolution_hours+'h':'—', 'Avg Resolution')}
-      ${_statItem(stats.uptime_percent!=null?stats.uptime_percent+'%':'—', 'Uptime (30d)')}
+      ${_statItem(stats.total_checks_30d     ?? '—', 'Checks (30d)')}
+      ${_statItem(stats.total_incidents      ?? '—', 'Total Incidents')}
+      ${_statItem(stats.open_incidents       ?? '—', 'Open Now')}
+      ${_statItem(stats.avg_resolution_hours != null ? stats.avg_resolution_hours + 'h' : '—', 'Avg Resolution')}
+      ${_statItem(stats.uptime_percent       != null ? stats.uptime_percent + '%'        : '—', 'Uptime (30d)')}
     </div>`;
 }
 
@@ -205,22 +292,23 @@ function _renderCurrentIncident(inc) {
   }
 
   const statusColors = { GREEN:'#16a34a', AMBER:'#d97706', RED:'#dc2626', GREY:'#6b7280' };
-  const sevClr = statusColors[(inc.severity||'AMBER').toUpperCase()] || '#d97706';
-  const age = inc.aging_minutes || 0;
-  const ageHrs = Math.floor(age/60);
+  const sevClr = statusColors[(inc.severity || 'AMBER').toUpperCase()] || '#d97706';
+  const age    = inc.aging_minutes || 0;
+  const ageHrs = Math.floor(age / 60);
   const ageMins = age % 60;
 
   el.innerHTML = `
     <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">
-      Current Incident ${inc.is_overdue?'<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px">OVERDUE</span>':''}
+      Current Incident ${inc.is_overdue ? '<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px">OVERDUE</span>' : ''}
     </h3>
-    <div style="border:1px solid ${inc.is_overdue?'#fca5a5':'#e2e8f0'};border-radius:8px;overflow:hidden">
-      ${_incRow('Incident ID', `<span style="font-family:monospace">${inc.incident_id}</span>`)}
-      ${_incRow('Status', `<span style="background:#eff6ff;color:#1d6fbb;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${inc.status}</span>`)}
-      ${_incRow('Severity', `<span style="background:${sevClr}20;color:${sevClr};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inc.severity}</span>`)}
-      ${_incRow('Category', inc.issue_category||'—')}
-      ${_incRow('Assigned To', inc.assigned_vendor||'ATM Team')}
-      ${_incRow('Aging', `<span style="color:${inc.is_overdue?'#dc2626':'#0f172a'};font-weight:700">${ageHrs}h ${ageMins}m</span>`)}
+    <div style="border:1px solid ${inc.is_overdue ? '#fca5a5' : '#e2e8f0'};border-radius:8px;overflow:hidden">
+      ${_incRow('Incident ID',  `<span style="font-family:monospace">${inc.incident_id}</span>`)}
+      ${_incRow('Status',       `<span style="background:#eff6ff;color:#1d6fbb;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${inc.status}</span>`)}
+      ${_incRow('Severity',     `<span style="background:${sevClr}20;color:${sevClr};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inc.severity}</span>`)}
+      ${_incRow('Category',     inc.issue_category || '—')}
+      ${_incRow('Assigned To',  inc.assigned_vendor || 'ATM Team')}
+      ${_incRow('Created',      _fmtDate(inc.created_at, true))}
+      ${_incRow('Aging',        `<span style="color:${inc.is_overdue ? '#dc2626' : '#0f172a'};font-weight:700">${ageHrs}h ${ageMins}m</span>`)}
     </div>`;
 }
 
@@ -242,23 +330,27 @@ function _renderLastChecklist(cl) {
     return;
   }
 
-  const items = cl.items || [];
-  const passed = items.filter(i=>i.result==='Pass').length;
-  const failed = items.filter(i=>i.result==='Fail').length;
+  const items  = cl.items || [];
+  const passed = items.filter(i => i.result === 'Pass').length;
+  const failed = items.filter(i => i.result === 'Fail').length;
 
   el.innerHTML = `
     <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Last Checklist</h3>
-    <div style="display:flex;gap:10px;margin-bottom:12px;font-size:12px;font-weight:600">
+    <div style="display:flex;gap:10px;margin-bottom:12px;font-size:12px;font-weight:600;flex-wrap:wrap">
       <span style="color:#16a34a">✓ ${passed} Pass</span>
       <span style="color:#dc2626">✗ ${failed} Fail</span>
-      <span style="color:#64748b">Submitted: ${cl.submitted_at?.slice(0,10)||'—'} by ${cl.submitted_by||'—'}</span>
+      <span style="color:#64748b">Submitted: ${_fmtDate(cl.submitted_at)} by ${cl.submitted_by || '—'}</span>
     </div>
     <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-      ${items.map(i=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9">
-        <span style="color:${i.result==='Pass'?'#16a34a':'#dc2626'};font-weight:700;width:16px">${i.result==='Pass'?'✓':'✗'}</span>
-        <span style="font-size:12px;flex:1">${i.item_name}</span>
-        ${i.notes?`<span style="font-size:11px;color:#94a3b8">${i.notes}</span>`:''}
-      </div>`).join('')}
+      ${items.length === 0
+        ? `<div style="padding:16px;text-align:center;color:#94a3b8;font-size:13px">No checklist items found</div>`
+        : items.map(i => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9">
+            <span style="color:${i.result==='Pass'?'#16a34a':'#dc2626'};font-weight:700;width:16px;flex-shrink:0">${i.result === 'Pass' ? '✓' : '✗'}</span>
+            <span style="font-size:12px;flex:1">${i.item_name}</span>
+            ${i.notes ? `<span style="font-size:11px;color:#94a3b8">${i.notes}</span>` : ''}
+          </div>`).join('')
+      }
     </div>`;
 }
 
@@ -274,6 +366,7 @@ function _renderIncidentHistory(incidents) {
   }
 
   const statusColors = { GREEN:'#16a34a', AMBER:'#d97706', RED:'#dc2626', GREY:'#6b7280' };
+
   el.innerHTML = `
     <h3 style="font-size:14px;font-weight:700;margin-bottom:12px">Incident History</h3>
     <div style="overflow-x:auto">
@@ -287,16 +380,18 @@ function _renderIncidentHistory(incidents) {
           <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid #e2e8f0">Created</th>
         </tr></thead>
         <tbody>
-          ${incidents.map(i=>{
-            const sev=(i.severity||'AMBER').toUpperCase();
-            const clr=statusColors[sev]||'#d97706';
+          ${incidents.map(i => {
+            const sev = (i.severity || 'AMBER').toUpperCase();
+            const clr = statusColors[sev] || '#d97706';
             return `<tr style="border-bottom:1px solid #f1f5f9">
-              <td style="padding:10px 12px;font-family:monospace">${i.incident_id||'—'}</td>
-              <td style="padding:10px 12px"><span style="background:${clr}20;color:${clr};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${sev}</span></td>
-              <td style="padding:10px 12px;color:#64748b">${i.status||'—'}</td>
-              <td style="padding:10px 12px;color:#64748b">${i.issue_category||'—'}</td>
-              <td style="padding:10px 12px;color:#64748b">${i.assigned_vendor_name||i.assigned_vendor||'ATM Team'}</td>
-              <td style="padding:10px 12px;color:#64748b;font-family:monospace;font-size:11px">${(i.created_at||'').slice(0,10)||'—'}</td>
+              <td style="padding:10px 12px;font-family:monospace">${i.incident_id || '—'}</td>
+              <td style="padding:10px 12px">
+                <span style="background:${clr}20;color:${clr};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${sev}</span>
+              </td>
+              <td style="padding:10px 12px;color:#64748b">${i.status || '—'}</td>
+              <td style="padding:10px 12px;color:#64748b">${i.issue_category || '—'}</td>
+              <td style="padding:10px 12px;color:#64748b">${i.assigned_vendor_name || i.assigned_vendor || 'ATM Team'}</td>
+              <td style="padding:10px 12px;color:#64748b;font-family:monospace;font-size:11px">${_fmtDate(i.created_at)}</td>
             </tr>`;
           }).join('')}
         </tbody>
