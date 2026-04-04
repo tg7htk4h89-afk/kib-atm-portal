@@ -120,8 +120,8 @@ async function _buildFromDashboard(machineId) {
         const rawItems = incObj.checklist_items || [];
         if (Array.isArray(rawItems) && rawItems.length > 0) {
           lastChecklist = {
-            submitted_at: incObj.created_at || activeInc.created_at || '',
-            submitted_by: incObj.created_by  || '—',
+            submitted_at: rawItems[0].submitted_at || incObj.created_at || activeInc.created_at || '',
+            submitted_by: rawItems[0].submitted_by || incObj.created_by || '—',
             items: rawItems.map(item => ({
               item_name: item.item_name || '—',
               result:    item.result    || '—',
@@ -288,7 +288,7 @@ function _renderLastChecklist(cl) {
     <div style="display:flex;gap:10px;margin-bottom:12px;font-size:12px;font-weight:600">
       <span style="color:#16a34a">✓ ${passed} Pass</span>
       <span style="color:#dc2626">✗ ${failed} Fail</span>
-      <span style="color:#64748b">Submitted: ${_fmtDate(cl.submitted_at)} by ${cl.submitted_by||'—'}</span>
+      <span style="color:#64748b">Submitted: ${_fmtDate(cl.submitted_at, true)} by ${cl.submitted_by||'—'}</span>
     </div>
     <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       ${items.map(i=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f1f5f9">
