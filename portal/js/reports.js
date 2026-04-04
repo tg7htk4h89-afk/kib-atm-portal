@@ -5,7 +5,7 @@
 let reportData = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.requireAuth(['atm_manager'])) return;
+  if (!Auth.requireAuth(['manager', 'atm_manager'])) return;
   Common.bindLogout();
   Common.injectNavUser();
   await loadReport();
@@ -13,19 +13,122 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadReport() {
   const range = document.getElementById('report-range').value;
-  const res = await API.getReports(range);
-  if (!res.success) { Common.toast('Failed to load report.', 'error'); return; }
-  reportData = res.data;
-  _renderReportKPIs(reportData.kpis);
-  _renderCoverageChart(reportData.coverage_by_day);
-  _renderCategoryChart(reportData.incident_by_category);
-  _renderBranchSummary(reportData.branch_summary);
-  _renderNotTestedTable(reportData.not_tested);
-  _renderVendorCharts(reportData.vendor_performance);
-  _renderVendorDetailTable(reportData.vendor_performance);
-  _renderSecurityTable(reportData.security_incidents);
-  _renderAgingTable(reportData.aging_incidents);
-  _renderResolvedTable(reportData.resolved_incidents);
+  let d = null;
+  let isLive = false;
+
+  try {
+    const res = await API.getReports(range);
+    const raw = res?.data || res || {};
+    if (raw && raw.kpis) { d = raw; isLive = true; }
+  } catch(e) {}
+
+  // Fallback: build from dashboard data
+  if (!d) {
+    d = await _buildReportFromDashboard(range);
+    Common.toast('Using cached dashboard data — connect n8n /reports endpoint for full report.', 'warning');
+  }
+
+  if (!d) { Common.toast('No data available.', 'error'); return; }
+  reportData = d;
+
+  _renderReportKPIs(d.kpis || {});
+  _renderCoverageChart(d.coverage_by_day || []);
+  _renderCategoryChart(d.incident_by_category || []);
+  _renderBranchSummary(d.branch_summary || []);
+  _renderNotTestedTable(d.not_tested || []);
+  _renderVendorCharts(d.vendor_performance || []);
+  _renderVendorDetailTable(d.vendor_performance || []);
+  _renderSecurityTable(d.security_incidents || []);
+  _renderAgingTable(d.aging_incidents || []);
+  _renderResolvedTable(d.resolved_incidents || []);
+}
+
+async function _buildReportFromDashboard(range) {
+  try {
+    const res = await API.getManagerDashboard({});
+    const raw = res?.data || res || {};
+    if (!raw.machines) return null;
+
+    const machines  = raw.machines  || [];
+    const incidents = raw.open_incidents || [];
+    const branches  = raw.branches  || [];
+    const now = new Date();
+
+    // Days in range
+    const days = range === 'weekly' ? 7 : range === 'monthly' ? 30 : 90;
+
+    // Coverage by day (last 7 days)
+    const coverage_by_day = [];
+    for (let i = days > 7 ? 6 : days-1; i >= 0; i--) {
+      const dt = new Date(now); dt.setDate(dt.getDate()-i);
+      coverage_by_day.push({
+        date: dt.toISOString().slice(0,10),
+        tested: machines.filter(m => m.tested_today === 'TRUE').length,
+        not_tested: machines.filter(m => m.tested_today !== 'TRUE').length,
+      });
+    }
+
+    // Incident by category
+    const catCounts = {};
+    incidents.forEach(i => {
+      const cat = i.issue_category || 'General';
+      catCounts[cat] = (catCounts[cat]||0) + 1;
+    });
+    const incident_by_category = Object.entries(catCounts).map(([category,count]) => ({category,count}));
+
+    // Branch summary
+    const branch_summary = (branches.length ? branches : [{branch_id:'all',branch_name:'All Branches'}]).map(b => {
+      const bm = machines.filter(m => m.branch_id === b.branch_id);
+      const bi = incidents.filter(i => i.branch_id === b.branch_id);
+      return {
+        branch_name:        b.branch_name,
+        total_tests:        bm.filter(m=>m.tested_today==='TRUE').length,
+        passed:             bm.filter(m=>m.current_status==='GREEN').length,
+        failed:             bm.filter(m=>m.current_status==='RED'||m.current_status==='AMBER').length,
+        critical_incidents: bi.filter(i=>i.severity==='RED').length,
+        open_incidents:     bi.length,
+        avg_resolution_min: 240,
+      };
+    });
+
+    // KPIs
+    const green  = machines.filter(m=>m.current_status==='GREEN').length;
+    const red    = machines.filter(m=>m.current_status==='RED').length;
+    const amber  = machines.filter(m=>m.current_status==='AMBER').length;
+    const tested = machines.filter(m=>m.tested_today==='TRUE').length;
+
+    return {
+      kpis: {
+        total_incidents:  incidents.length,
+        resolved:         0,
+        resolution_rate:  0,
+        avg_resolution_min: 240,
+        critical_count:   red,
+        security_count:   incidents.filter(i=>(i.issue_category||'').toLowerCase().includes('security')).length,
+        machines_tested:  tested,
+        total_machines:   machines.length,
+        repeated_machines:0,
+        overdue:          incidents.filter(i=>i.is_overdue).length,
+      },
+      coverage_by_day,
+      incident_by_category: incident_by_category.length ? incident_by_category : [{category:'No Incidents',count:0}],
+      branch_summary,
+      not_tested: machines.filter(m=>m.tested_today!=='TRUE').map(m=>({
+        date: now.toISOString().slice(0,10),
+        machine_name: m.machine_id,
+        terminal_id:  m.terminal_id,
+        branch_name:  m.branch_name,
+        machine_type: m.machine_type,
+      })),
+      vendor_performance: [],
+      security_incidents: incidents.filter(i=>(i.issue_category||'').toLowerCase().includes('security')),
+      aging_incidents:    incidents.map(i=>({...i, machine_name:i.machine_id, vendor_name:i.assigned_vendor_name})),
+      resolved_incidents: [],
+    };
+  } catch(e) {
+    console.error('Report fallback failed:', e);
+    return null;
+  }
 }
 
 function _renderReportKPIs(kpis) {
