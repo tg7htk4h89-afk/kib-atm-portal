@@ -57,6 +57,7 @@ async function loadMachineDetail(machineId) {
   _renderCurrentIncident(data.current_incident || null);
   _renderLastChecklist(data.last_checklist || null);
   _renderIncidentHistory(data.incident_history || []);
+  _renderImages(data.images || []);
 }
 
 // ── Date formatter — handles Sheets serial, M/D/YYYY, ISO, empty ────────────
@@ -134,6 +135,15 @@ async function _buildFromDashboard(machineId) {
       }
     }
 
+    // ── Fetch images for active incident ─────────────────────────────────
+    let incidentImages = [];
+    if (activeInc && activeInc.incident_id) {
+      try {
+        const imgRes = await API.getIncidentDetails(activeInc.incident_id);
+        incidentImages = imgRes?.incident?.images || [];
+      } catch(e) {}
+    }
+
     return {
       machine,
       stats: {
@@ -156,6 +166,7 @@ async function _buildFromDashboard(machineId) {
       } : null,
       last_checklist: lastChecklist,
       incident_history: machineInc,
+      images: incidentImages,
     };
   } catch(e) {
     console.error('Dashboard fallback failed:', e);
@@ -339,6 +350,74 @@ function _renderIncidentHistory(incidents) {
         </tbody>
       </table>
     </div>`;
+}
+
+// ── Render Images ───────────────────────────────────────────────────────────
+function _renderImages(images) {
+  // Inject images card after lastChecklistCard if not already present
+  let imgCard = document.getElementById('imagesCard');
+  if (!imgCard) {
+    const clCard = document.getElementById('lastChecklistCard')?.closest('.card');
+    if (!clCard) return;
+    const newCard = document.createElement('div');
+    newCard.className = 'card mb-5';
+    newCard.innerHTML = '<div class="card-header"><div class="card-title">📷 Checklist Images</div></div><div class="card-body" id="imagesCard"></div>';
+    clCard.insertAdjacentElement('afterend', newCard);
+    imgCard = document.getElementById('imagesCard');
+  }
+
+  if (!images || !images.length) {
+    imgCard.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:13px">No images attached</div>';
+    return;
+  }
+
+  imgCard.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+      ${images.map((img, idx) => `
+        <div style="border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;cursor:pointer"
+             onclick="_openLightbox('${img.drive_url || img.thumbnail_url}', '${img.original_name || 'Image'}')">
+          <div style="position:relative;padding-top:75%;background:#f8fafc;overflow:hidden">
+            <img src="${img.thumbnail_url || ''}"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+                 style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover"
+                 alt="${img.original_name || 'Image'}">
+            <div style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;
+                        align-items:center;justify-content:center;color:#94a3b8;font-size:32px">🖼</div>
+          </div>
+          <div style="padding:6px 8px;font-size:10px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${img.original_name || 'Image ' + (idx+1)}
+          </div>
+          <div style="padding:0 8px 6px;display:flex;gap:4px">
+            <a href="${img.drive_url || '#'}" target="_blank"
+               onclick="event.stopPropagation()"
+               style="font-size:10px;color:#1d6fbb;text-decoration:none;font-weight:600">Open ↗</a>
+            <span style="font-size:10px;color:#94a3b8">· ${img.file_size_kb || 0}kb</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function _openLightbox(url, name) {
+  let lb = document.getElementById('img-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'img-lightbox';
+    lb.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;flex-direction:column;padding:20px';
+    lb.innerHTML = `
+      <button onclick="document.getElementById('img-lightbox').style.display='none'"
+        style="position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer">✕</button>
+      <img id="lb-img" style="max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain" src="" alt="">
+      <div id="lb-name" style="color:#e2e8f0;font-size:12px;margin-top:10px"></div>
+      <a id="lb-link" href="#" target="_blank"
+         style="color:#60a5fa;font-size:12px;margin-top:4px;text-decoration:none">Open in Google Drive ↗</a>`;
+    lb.addEventListener('click', e => { if (e.target === lb) lb.style.display = 'none'; });
+    document.body.appendChild(lb);
+  }
+  document.getElementById('lb-img').src = url;
+  document.getElementById('lb-name').textContent = name;
+  document.getElementById('lb-link').href = url;
+  lb.style.display = 'flex';
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
