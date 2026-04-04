@@ -930,29 +930,33 @@ async function viewLastTest(machineDataStr) {
       </div>
     `;
 
-    // Get checklist items
-    // Strategy 1: /machine-detail — works for ALL machines (pass or fail),
-    //   reads Incident_Checklist_Details by machine_id, returns last_checklist
-    // Strategy 2: /incident-details fallback for active incident only
+    // Get checklist items — two strategies:
+    // 1. Active incident  → /incident-details?id=INC-xxx  (has fail items)
+    // 2. No incident (all pass) → /incident-details?machine_id=MCH-xxx
+    //    (new mode: returns last submission from Incident_Checklist_Details)
     let checklistItems = [];
     let checklistMeta  = null;
 
-    try {
-      const mdRes = await API.getMachineDetail(machine.machine_id);
-      if (mdRes && mdRes.success && mdRes.last_checklist) {
-        const cl = mdRes.last_checklist;
-        checklistItems = cl.items || [];
-        checklistMeta  = cl; // has submitted_at, submitted_by
-      }
-    } catch(e) {}
-
-    // Fallback: active incident + no data from machine-detail
-    if (!checklistItems.length && machine.active_incident_id) {
+    if (machine.active_incident_id) {
+      // Strategy 1: fetch by incident_id
       try {
         const incRes = await API.getIncidentDetails(machine.active_incident_id);
         if (incRes && incRes.success) {
-          const inc = incRes.incident || incRes.data || incRes;
-          checklistItems = inc.checklist_items || inc.checklist || [];
+          const inc = incRes.incident || {};
+          checklistItems = inc.checklist_items || [];
+          checklistMeta  = { submitted_at: inc.submitted_at || inc.created_at, submitted_by: inc.submitted_by || inc.created_by };
+        }
+      } catch(e) {}
+    }
+
+    if (!checklistItems.length) {
+      // Strategy 2: fetch last checklist by machine_id (works for all-pass submissions)
+      try {
+        const clRes = await API.get(CONFIG.ENDPOINTS.INCIDENT_DETAILS, { machine_id: machine.machine_id });
+        if (clRes && clRes.success) {
+          const inc = clRes.incident || {};
+          checklistItems = inc.checklist_items || [];
+          checklistMeta  = { submitted_at: inc.submitted_at, submitted_by: inc.submitted_by };
         }
       } catch(e) {}
     }
