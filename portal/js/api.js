@@ -50,9 +50,9 @@ const API = (() => {
 
   async function get(path, params) {
     let url = path;
-    if (params) {
+    if (params && Object.keys(params).length > 0) {
       const qs = new URLSearchParams(params).toString();
-      url = path + '?' + qs;
+      if (qs) url = path + '?' + qs;
     }
     return _fetch('GET', url, null, false);
   }
