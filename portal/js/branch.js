@@ -951,14 +951,19 @@ async function viewLastTest(machineDataStr) {
 
     if (!checklistItems.length) {
       // Strategy 2: fetch last checklist by machine_id (works for all-pass submissions)
+      // Use machine_id, falling back to terminal_id if machine_id is missing
+      const lookupId = machine.machine_id || machine.terminal_id;
+      console.log('[viewLastTest] Strategy 2 — machine_id:', machine.machine_id, 'terminal_id:', machine.terminal_id, 'using:', lookupId);
       try {
-        const clRes = await API.get(CONFIG.ENDPOINTS.INCIDENT_DETAILS, { machine_id: machine.machine_id });
+        const clRes = await API.get(CONFIG.ENDPOINTS.INCIDENT_DETAILS, { machine_id: lookupId });
+        console.log('[viewLastTest] Strategy 2 response:', JSON.stringify(clRes).slice(0, 200));
         if (clRes && clRes.success) {
           const inc = clRes.incident || {};
           checklistItems = inc.checklist_items || [];
           checklistMeta  = { submitted_at: inc.submitted_at, submitted_by: inc.submitted_by };
+          console.log('[viewLastTest] Got', checklistItems.length, 'checklist items');
         }
-      } catch(e) {}
+      } catch(e) { console.error('[viewLastTest] Strategy 2 error:', e); }
     }
     let checklistHtml = '';
 
