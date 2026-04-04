@@ -159,7 +159,7 @@
       </div>
 
       <!-- Machine Status Grid -->
-      <div class="card mb-5">
+      <div class="card mb-5" id="machines">
         <div class="card-header">
           <div class="card-title">🏧 All Machines</div>
           <div class="flex gap-2">
@@ -174,7 +174,7 @@
       </div>
 
       <!-- Open Incidents Table -->
-      <div class="card mb-5">
+      <div class="card mb-5" id="incidents">
         <div class="card-header">
           <div class="card-title">⚠️ Active Incidents</div>
           <div class="flex gap-2">
@@ -261,5 +261,28 @@
 <script src="js/api.js"></script>
 <script src="js/common.js"></script>
 <script src="js/manager.js"></script>
+
+  <script>
+    // Handle hash navigation — scroll to section and highlight nav item
+    function handleHash() {
+      const hash = window.location.hash.replace('#','');
+      if (!hash) return;
+      const target = document.getElementById(hash);
+      if (target) {
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+      }
+      // Update nav active state
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      const activeLink = document.querySelector(`.nav-item[href*="#${hash}"]`);
+      if (activeLink) activeLink.classList.add('active');
+    }
+
+    window.addEventListener('hashchange', handleHash);
+    // On load — after dashboard renders
+    window.addEventListener('load', () => setTimeout(handleHash, 800));
+  </script>
+
 </body>
 </html>
