@@ -943,7 +943,11 @@ const WFM_API = {
       const res = await fetch(url.toString());
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      if(!text || !text.trim()) { console.warn('WFM API empty response:', endpoint); return null; }
+      // n8n lastNode wraps array — unwrap if needed
+      const parsed = JSON.parse(text);
+      if(Array.isArray(parsed)) return parsed[0] || null;
+      return parsed;
     } catch(e) { console.warn('WFM API GET error:', endpoint, e.message); return null; }
   },
   async post(endpoint, body) {
@@ -955,7 +959,10 @@ const WFM_API = {
       });
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      if(!text || !text.trim()) { console.warn('WFM API empty response:', endpoint); return null; }
+      const parsed = JSON.parse(text);
+      if(Array.isArray(parsed)) return parsed[0] || null;
+      return parsed;
     } catch(e) { console.warn('WFM API POST error:', endpoint, e.message); return null; }
   }
 };
@@ -2546,7 +2553,8 @@ async function submitAbsence(){
       notes: document.getElementById('abs-notes').value,
       reported_by: currentUser.username
     });
-    if(res && res.success){
+    const absRes = Array.isArray(res) ? (res[0]||{}) : (res||{});
+    if(absRes && absRes.success){
       toast('✅ Absence recorded in Google Sheets','success');
       await loadRealAbsences();
     } else {
