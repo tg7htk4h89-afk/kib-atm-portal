@@ -898,6 +898,7 @@ async function viewLastTest(machineDataStr) {
 
   title.textContent = `Last Test — ${machine.terminal_id}`;
   sub.textContent   = machine.location_description || machine.machine_type;
+  // subtitle will be updated below once checklist data loads
   body.innerHTML    = '<div style="text-align:center;padding:32px;color:var(--text-muted)"><div class="spinner" style="margin:0 auto 12px"></div><p>Loading...</p></div>';
   modal.style.display = 'flex';
 
@@ -929,16 +930,31 @@ async function viewLastTest(machineDataStr) {
       </div>
     `;
 
-    // Get checklist items - try multiple sources
+    // Get checklist items
+    // Strategy 1: /machine-detail — works for ALL machines (pass or fail),
+    //   reads Incident_Checklist_Details by machine_id, returns last_checklist
+    // Strategy 2: /incident-details fallback for active incident only
     let checklistItems = [];
-    if (machine.active_incident_id) {
+    let checklistMeta  = null;
+
+    try {
+      const mdRes = await API.getMachineDetail(machine.machine_id);
+      if (mdRes && mdRes.success && mdRes.last_checklist) {
+        const cl = mdRes.last_checklist;
+        checklistItems = cl.items || [];
+        checklistMeta  = cl; // has submitted_at, submitted_by
+      }
+    } catch(e) {}
+
+    // Fallback: active incident + no data from machine-detail
+    if (!checklistItems.length && machine.active_incident_id) {
       try {
         const incRes = await API.getIncidentDetails(machine.active_incident_id);
         if (incRes && incRes.success) {
           const inc = incRes.incident || incRes.data || incRes;
           checklistItems = inc.checklist_items || inc.checklist || [];
         }
-      } catch(e) { checklistItems = []; }
+      } catch(e) {}
     }
     let checklistHtml = '';
 
@@ -981,19 +997,24 @@ async function viewLastTest(machineDataStr) {
     } else {
       // No checklist data saved yet — show checklist template ready to fill
       const hasIncident = !!machine.active_incident_id;
+      const wasTested   = machine.tested_today === 'TRUE' || machine.tested_today === true;
       checklistHtml = `
-        <div style="text-align:center;padding:16px 24px;background:${hasIncident ? '#fffbeb' : '#f9fafb'};
-                    border-radius:8px;margin-bottom:16px;border:1px solid ${hasIncident ? '#fcd34d' : 'var(--border)'}">
-          <div style="font-size:24px;margin-bottom:6px">${hasIncident ? '⚠️' : '📋'}</div>
+        <div style="text-align:center;padding:16px 24px;background:${hasIncident ? '#fffbeb' : wasTested ? '#f0fdf4' : '#f9fafb'};
+                    border-radius:8px;margin-bottom:16px;border:1px solid ${hasIncident ? '#fcd34d' : wasTested ? '#86efac' : 'var(--border)'}">
+          <div style="font-size:24px;margin-bottom:6px">${hasIncident ? '⚠️' : wasTested ? '✅' : '📋'}</div>
           <div style="font-weight:600;font-size:13px">
             ${hasIncident
               ? 'Checklist data not available for this incident'
-              : 'No submission yet today'}
+              : wasTested
+                ? 'Machine tested today — all items passed'
+                : 'No submission yet today'}
           </div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
             ${hasIncident
               ? 'Submit a new retest to record checklist results'
-              : 'Click Retest to submit checklist for this machine'}
+              : wasTested
+                ? 'Checklist detail records not loaded'
+                : 'Click Retest to submit checklist for this machine'}
           </div>
         </div>
         <div>
@@ -1010,6 +1031,13 @@ async function viewLastTest(machineDataStr) {
           ).join('')}
         </div>
       `;
+    }
+
+    // Update subtitle with submission info if available
+    if (checklistMeta && checklistMeta.submitted_at) {
+      const d = new Date(checklistMeta.submitted_at);
+      const fmt = isNaN(d) ? checklistMeta.submitted_at : d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      sub.textContent = `${machine.location_description || machine.machine_type} · ${fmt} by ${checklistMeta.submitted_by || '—'}`;
     }
 
     body.innerHTML = infoHtml + `
