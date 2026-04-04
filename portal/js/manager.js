@@ -84,7 +84,7 @@ function _showDataModeBanner(mode) {
     banner.innerHTML = '';
   } else {
     banner.style.cssText = 'background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px';
-    banner.innerHTML = '⚠️ <strong>Demo Mode</strong> — n8n workflow not connected. Showing sample data. Import <strong>WF_Manager_Dashboard_v2.json</strong> into n8n and publish it to see live data.';
+    banner.innerHTML = '⚠️ <strong>Demo Mode</strong> — n8n workflow not connected. Showing sample data. Import <strong>WF_Manager_Dashboard_v4.json</strong> into n8n and publish it to see live data.';
   }
 }
 
