@@ -404,8 +404,11 @@ async function submitChecklist() {
     const retestMachine = selectedMachine; // save before clearing
 
     // ── Upload images if any (non-blocking, won't delay success UI) ──────
-    if (selectedImages.length > 0) {
-      _uploadChecklistImages(incidentId, submissionId, payload.branch_id, session)
+    // Capture NOW before selectedImages/selectedMachine are cleared below
+    const imagesToUpload = [...selectedImages];
+    const machineForUpload = selectedMachine;
+    if (imagesToUpload.length > 0) {
+      _uploadChecklistImages(imagesToUpload, machineForUpload, incidentId, submissionId, payload.branch_id, session)
         .catch(e => console.warn('[branch] Image upload failed (non-critical):', e));
     }
 
@@ -462,11 +465,11 @@ async function submitChecklist() {
 }
 
 // ── Image Upload Helper ──────────────────────────────────────────────────────
-async function _uploadChecklistImages(incidentId, submissionId, branchId, session) {
-  if (!selectedImages.length) return;
+async function _uploadChecklistImages(imagesToUpload, machine, incidentId, submissionId, branchId, session) {
+  if (!imagesToUpload || !imagesToUpload.length) return;
 
   // Convert all File objects to base64
-  const base64Images = await Promise.all(selectedImages.map(file =>
+  const base64Images = await Promise.all(imagesToUpload.map(file =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload  = e => resolve({
@@ -483,7 +486,7 @@ async function _uploadChecklistImages(incidentId, submissionId, branchId, sessio
   const uploadPayload = {
     incident_id:   incidentId   || '',
     submission_id: submissionId || '',
-    machine_id:    selectedMachine?.machine_id || '',
+    machine_id:    machine?.machine_id || '',
     branch_id:     branchId || '',
     uploaded_by:   session.user_id,
     uploaded_role: session.role,
