@@ -399,8 +399,15 @@ async function submitChecklist() {
 
   if (res.success) {
     const status = res.machine_status || res.data?.machine_status || 'GREEN';
-    const incidentId = res.incident_id || res.data?.incident_id || null;
+    const incidentId   = res.incident_id   || res.data?.incident_id   || null;
+    const submissionId = res.submission_id || res.data?.submission_id || null;
     const retestMachine = selectedMachine; // save before clearing
+
+    // ── Upload images if any (non-blocking, won't delay success UI) ──────
+    if (selectedImages.length > 0) {
+      _uploadChecklistImages(incidentId, submissionId, payload.branch_id, session)
+        .catch(e => console.warn('[branch] Image upload failed (non-critical):', e));
+    }
 
     const alertEl = document.getElementById('success-alert');
     const detailEl = document.getElementById('success-detail');
@@ -453,6 +460,45 @@ async function submitChecklist() {
     Common.toast(res.error || res.message || 'Submission failed. Please try again.', 'error');
   }
 }
+
+// ── Image Upload Helper ──────────────────────────────────────────────────────
+async function _uploadChecklistImages(incidentId, submissionId, branchId, session) {
+  if (!selectedImages.length) return;
+
+  // Convert all File objects to base64
+  const base64Images = await Promise.all(selectedImages.map(file =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = e => resolve({
+        filename:  file.name,
+        mime_type: file.type,
+        size_kb:   Math.round(file.size / 1024),
+        data:      e.target.result.split(',')[1] // strip data:image/...;base64, prefix
+      });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })
+  ));
+
+  const uploadPayload = {
+    incident_id:   incidentId   || '',
+    submission_id: submissionId || '',
+    machine_id:    selectedMachine?.machine_id || '',
+    branch_id:     branchId || '',
+    uploaded_by:   session.user_id,
+    uploaded_role: session.role,
+    images:        base64Images,
+    uploaded_at:   new Date().toISOString(),
+  };
+
+  const res = await API.post(CONFIG.ENDPOINTS.UPLOAD_IMAGE, uploadPayload);
+  if (res && res.success) {
+    console.log(`[branch] ${res.uploaded || base64Images.length} image(s) uploaded to Drive`);
+  } else {
+    console.warn('[branch] Image upload response:', res);
+  }
+}
+
 
 function resetForm() {
   document.getElementById('machine-select').value = '';
