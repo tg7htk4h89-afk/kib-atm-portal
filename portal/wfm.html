@@ -450,9 +450,12 @@ textarea.form-control{resize:vertical;min-height:80px}
                   </select>
                 </div>
                 <div class="form-group" id="replacement-name-group">
-                  <label class="form-label">Replacement Name <span style="font-size:11px;color:var(--text-muted)">(optional — auto-filled by engine)</span></label>
-                  <input class="form-control" id="abs-replacement-name" placeholder="e.g. Ahmad Alenezi" list="replacement-suggestions">
-                  <datalist id="replacement-suggestions"></datalist>
+                  <label class="form-label">Replacement Staff
+                    <span id="abs-rep-badge" style="display:none;font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 8px;border-radius:999px;margin-left:6px;font-weight:600"></span>
+                  </label>
+                  <select class="form-control" id="abs-replacement-name" style="font-weight:600">
+                    <option value="">— Select from recommended list —</option>
+                  </select>
                 </div>
               </div>
               <!-- Live Replacement Preview (shows before submit) -->
@@ -1421,12 +1424,15 @@ function _norm(s) {
 // Maps title variants to a canonical role group so "Sr. BM" === "Branch Manager"
 function _posGroup(pos) {
   const p = _norm(pos);
-  if (/branch|manager|bom|sr bm|^bm$|abm/.test(p)) return 'manager';
-  if (/teller/.test(p))                              return 'teller';
-  if (/relation|^rm$|sr rm|acting rm|^ro$|sr ro|acting ro/.test(p)) return 'relations';
-  if (/service|^so$/.test(p))                        return 'service';
-  if (/back|^boo$/.test(p))                          return 'backoffice';
-  return p; // exact fallback
+  // NOTE: order matters — check 'relations' BEFORE 'manager' so
+  // "Relationship Manager" / "RM" does NOT fall into the manager group
+  if (/^rm$|sr rm|acting rm|relation/.test(p))          return 'relations_mgr';  // RM, Sr. RM, Acting RM
+  if (/^ro$|sr ro|acting ro/.test(p))                   return 'relations_off';  // RO, Sr. RO, Acting RO
+  if (/branch.*manager|^bm$|sr.*bm|abm|bom/.test(p))   return 'branch_mgr';     // BM, Sr. BM, ABM, BOM
+  if (/teller/.test(p))                                 return 'teller';          // Teller, H.Teller, Lead Teller
+  if (/^so$|service.*off/.test(p))                      return 'service_off';     // SO
+  if (/back.*off|^boo$/.test(p))                        return 'back_office';     // BOO, Back Office
+  return p; // exact fallback for any unrecognised title
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1984,11 +1990,27 @@ function showCoverPreview(branch, absentEmp, date) {
     </div>`;
   }).join('');
 
-  // Auto-fill replacement name field with top recommendation
-  const datalist  = document.getElementById('replacement-suggestions');
-  const nameInput = document.getElementById('abs-replacement-name');
-  if (datalist)  datalist.innerHTML = ranked.slice(0,5).map(r=>`<option value="${r.employee.name}">`).join('');
-  if (nameInput && !nameInput.value) nameInput.value = ranked[0].employee.name;
+  // Populate the dropdown with top 3 candidates
+  const repSelect = document.getElementById('abs-replacement-name');
+  const repBadge  = document.getElementById('abs-rep-badge');
+  if (repSelect) {
+    const top3 = result.ranked.slice(0, 3);
+    repSelect.innerHTML = '<option value="">— Select from recommended list —</option>' +
+      top3.map((r, i) => {
+        const br    = BRANCHES.find(b => b.id === r.employee.branch);
+        const stars = r.neverCovered ? ' ⭐' : ` (${r.coverCount} covers)`;
+        return `<option value="${r.employee.name}">#${i+1} ${r.employee.name} — ${r.employee.position} · ${br?.name||r.employee.branch}${stars}</option>`;
+      }).join('') +
+      (result.ranked.length > 3
+        ? `<option value="" disabled>── ${result.ranked.length - 3} more eligible (not shown) ──</option>`
+        : '');
+    // Auto-select #1
+    if (top3.length) repSelect.value = top3[0].employee.name;
+  }
+  if (repBadge) {
+    repBadge.textContent = result.ranked.length + ' eligible';
+    repBadge.style.display = 'inline';
+  }
 
   preview.style.display = 'block';
   nocover.style.display = 'none';
@@ -2099,9 +2121,9 @@ function onAbsBranchChange(){
     if(emp){
       document.getElementById('abs-position').value=emp.position;
       const date=document.getElementById('abs-start').value||new Date().toISOString().slice(0,10);
-      // Clear old auto-fill so preview can re-fill
-      const nameInput=document.getElementById('abs-replacement-name');
-      if(nameInput) nameInput.value='';
+      // Reset dropdown so preview can re-populate
+      const repSel=document.getElementById('abs-replacement-name');
+      if(repSel){ repSel.innerHTML='<option value="">— Loading... —</option>'; repSel.value=''; }
       showCoverPreview(branch, emp, date);
     } else {
       document.getElementById('abs-cover-preview').style.display='none';
