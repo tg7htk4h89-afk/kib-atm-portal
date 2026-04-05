@@ -703,13 +703,17 @@ textarea.form-control{resize:vertical;min-height:80px}
 
         <!-- PAGE: BRANCH STATUS -->
         <div class="page" id="page-branches">
-          <div class="filter-bar">
+          <div class="filter-bar" style="display:flex;align-items:center;gap:8px">
             <select class="form-control" id="br-filter-area" onchange="renderBranchStatus()" style="width:150px">
               <option value="">All Areas</option><option>Area 1</option><option>Area 2</option>
             </select>
             <select class="form-control" id="br-filter-health" onchange="renderBranchStatus()" style="width:150px">
               <option value="">All Health</option><option>Healthy</option><option>Warning</option><option>Critical</option>
             </select>
+            <button class="btn btn-secondary btn-sm" onclick="refreshBranchStatus()" style="margin-left:auto;display:flex;align-items:center;gap:4px">
+              🔄 Refresh
+            </button>
+            <span id="branch-last-updated" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
           <div class="staffing-grid" id="branch-grid"></div>
         </div>
@@ -2622,6 +2626,17 @@ function exportEmployees(){
 }
 
 // ── BRANCH STATUS ────────────────────────────────────────────
+async function refreshBranchStatus(){
+  const btn = document.querySelector('[onclick="refreshBranchStatus()"]');
+  if(btn){ btn.textContent='⏳ Loading...'; btn.disabled=true; }
+  await loadRealEmployees();
+  await loadRealDashboard();
+  renderBranchStatus();
+  const el = document.getElementById('branch-last-updated');
+  if(el) el.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+  if(btn){ btn.textContent='🔄 Refresh'; btn.disabled=false; }
+}
+
 function renderBranchStatus(){
   const grid=document.getElementById('branch-grid');
   if(!grid) return;
@@ -2642,24 +2657,54 @@ function renderBranchStatus(){
   if(filterArea) branches=branches.filter(b=>b.area===filterArea);
   if(filterHealth) branches=branches.filter(b=>b.health===filterHealth);
 
+  if(!branches.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted)">No branches to display</div>';
+    return;
+  }
+
   grid.innerHTML=branches.map(b=>{
-    const emps=EMPLOYEES.filter(e=>e.branch===b.id);
-    const avail=emps.filter(e=>e.status==='Available').length;
-    const onLeave=emps.filter(e=>e.status==='On Leave').length;
-    const absent=emps.filter(e=>e.status==='Absent').length;
-    const openAbs=ABSENCE_LOG.filter(a=>a.branch===b.id&&a.status==='Open').length;
-    const pct=emps.length>0?Math.round((avail/emps.length)*100):0;
-    return `<div class="branch-card ${b.health}">
-      <div class="branch-card-name">${b.name}</div>
-      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">${b.area}</div>
-      <div class="progress-bar" style="margin-bottom:8px"><div class="progress-fill ${pct>=80?'green':pct>=60?'amber':'red'}" style="width:${pct}%"></div></div>
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px">${pct}% available</div>
-      <div class="branch-card-pos"><span>Total Staff</span><span style="font-weight:700">${emps.length}</span></div>
-      <div class="branch-card-pos"><span>Available</span><span style="color:var(--green);font-weight:700">${avail}</span></div>
-      <div class="branch-card-pos"><span>On Leave</span><span style="color:var(--amber);font-weight:700">${onLeave}</span></div>
-      <div class="branch-card-pos"><span>Absent</span><span style="color:${absent?'var(--red)':'var(--text-muted)'};font-weight:700">${absent}</span></div>
-      ${openAbs>0?`<div style="margin-top:8px;font-size:11px;background:var(--red-bg);color:var(--red);padding:4px 8px;border-radius:4px;font-weight:700">⚠ ${openAbs} open absence${openAbs>1?'s':''}</div>`:''}
-      <div style="margin-top:8px"><span class="badge ${b.health==='healthy'?'badge-green':b.health==='warning'?'badge-amber':'badge-red'}" style="font-size:10px">${b.health.toUpperCase()}</span></div>
+    const emps    = EMPLOYEES.filter(e=>_norm(e.branch)===_norm(b.id));
+    const avail   = emps.filter(e=>e.status==='Available').length;
+    const onLeave = emps.filter(e=>e.status==='On Leave').length;
+    const absent  = emps.filter(e=>e.status==='Absent').length;
+    const assigned= emps.filter(e=>e.status==='On Assignment').length;
+    const openAbs = ABSENCE_LOG.filter(a=>_norm(a.branch)===_norm(b.id)&&a.status==='Open').length;
+    const total   = emps.length;
+
+    // Availability % = (available + on_assignment) / total
+    // On Assignment are technically working (just at another branch)
+    const activeCount = avail + assigned;
+    const pct = total > 0 ? Math.round((activeCount / total) * 100) : 0;
+
+    // Health: based on absence rate
+    const health = absent >= 3 ? 'critical' : absent >= 1 ? 'warning' : 'healthy';
+    b.health = health; // keep in sync
+
+    return `<div class="branch-card ${health}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="branch-card-name">${b.name}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">${b.area}</div>
+        </div>
+        <span class="badge ${health==='healthy'?'badge-green':health==='warning'?'badge-amber':'badge-red'}" style="font-size:10px">${health.toUpperCase()}</span>
+      </div>
+      <div class="progress-bar" style="margin-bottom:6px">
+        <div class="progress-fill ${pct>=80?'green':pct>=50?'amber':'red'}" style="width:${Math.max(pct,2)}%"></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)'};margin-bottom:8px">
+        ${pct}% available
+      </div>
+      <div class="branch-card-pos"><span>Total Staff</span>
+        <span style="font-weight:700">${total}</span></div>
+      <div class="branch-card-pos"><span>Available</span>
+        <span style="color:var(--green);font-weight:700">${avail}</span></div>
+      <div class="branch-card-pos"><span>On Leave</span>
+        <span style="color:var(--amber);font-weight:700">${onLeave}</span></div>
+      <div class="branch-card-pos"><span>On Assignment</span>
+        <span style="color:#0891b2;font-weight:700">${assigned}</span></div>
+      <div class="branch-card-pos"><span>Absent</span>
+        <span style="color:${absent?'var(--red)':'var(--text-muted)'};font-weight:700">${absent}</span></div>
+      ${openAbs>0?`<div style="margin-top:8px;font-size:11px;background:var(--red-bg);color:var(--red);padding:4px 8px;border-radius:4px;font-weight:600">⚠ ${openAbs} open case${openAbs>1?'s':''}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -2835,7 +2880,15 @@ async function loadRealEmployees(){
       area:        e.area,
       branch:      e.branch_id,
       position:    e.position,
-      status:      e.status || 'Available',
+      // Normalize status: only known absence states are preserved; everything else → Available
+      status: (()=>{
+        const s = (e.status||'').toString().trim().toLowerCase();
+        if(s==='absent')                   return 'Absent';
+        if(s.includes('leave'))            return 'On Leave';
+        if(s.includes('assignment'))       return 'On Assignment';
+        if(s==='unavailable')              return 'Unavailable';
+        return 'Available'; // default: empty, 'active', 'TRUE', anything else
+      })(),
       // Guard: phone numbers (7+ digits) are never valid cover counts — default to 0
       // _safeInt: only accept values where the raw string is purely numeric (no "01-Mar" dates)
       coverCount:  (()=>{ const raw=(e.cover_count??e.coverCount??'').toString().trim(); return /^\d+$/.test(raw) ? Math.min(parseInt(raw),999) : 0; })(),
