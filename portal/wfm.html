@@ -441,12 +441,19 @@ textarea.form-control{resize:vertical;min-height:80px}
                 <label class="form-label">Notes / Reason</label>
                 <textarea class="form-control" id="abs-notes" placeholder="Additional context..."></textarea>
               </div>
-              <div class="form-group">
-                <label class="form-label">Requires Replacement?</label>
-                <select class="form-control" id="abs-needs-replacement">
-                  <option value="yes">Yes — Find Replacement</option>
-                  <option value="no">No — Record Only</option>
-                </select>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Requires Replacement?</label>
+                  <select class="form-control" id="abs-needs-replacement" onchange="toggleReplacementField()">
+                    <option value="yes">Yes — Find Replacement</option>
+                    <option value="no">No — Record Only</option>
+                  </select>
+                </div>
+                <div class="form-group" id="replacement-name-group">
+                  <label class="form-label">Replacement Name <span style="font-size:11px;color:var(--text-muted)">(optional — auto-filled by engine)</span></label>
+                  <input class="form-control" id="abs-replacement-name" placeholder="e.g. Ahmad Alenezi" list="replacement-suggestions">
+                  <datalist id="replacement-suggestions"></datalist>
+                </div>
               </div>
               <!-- Live Replacement Preview (shows before submit) -->
               <div id="abs-cover-preview" style="display:none;margin-top:4px;padding:14px 16px;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px">
@@ -1068,6 +1075,7 @@ let LEAVE_REQUESTS  = [];
 let ABSENCE_LOG     = [];
 let COVERAGE_HISTORY= [];
 let AUDIT_LOG       = [];
+const AVATARS = ['#1D6FBB','#16a34a','#d97706','#9333ea','#e11d48','#0891b2','#65a30d','#c2410c'];
 
 // ── INIT APP ────────────────────────────────────────────────
 let calYear=2026, calMonth=3; // April 2026
@@ -1895,14 +1903,34 @@ function showCoverPreview(branch, absentEmp, date){
   const list=document.getElementById('abs-cover-list');
   const badge=document.getElementById('abs-cover-badge');
 
-  // Use selectReplacement engine but exclude the absent employee
-  const pool = EMPLOYEES.filter(e =>
-    e.position === absentEmp.position &&
+  // ── Position grouping — maps many title variants to a common role group ────
+  // This handles "Sr. BM" = "BM" = "Branch Manager" = "ABM" etc.
+  function posGroup(pos){
+    const p = (pos||'').toLowerCase().replace(/[^a-z]/g,' ').trim();
+    if(/branch.?manager|bom|sr.*bm|^bm$|abm/.test(p)) return 'manager';
+    if(/teller|head.?teller|lead.?teller|h\.?teller/.test(p))  return 'teller';
+    if(/relation|^rm$|sr.*rm|acting.*rm|^ro$|sr.*ro|acting.*ro/.test(p)) return 'relations';
+    if(/service|^so$/.test(p)) return 'service';
+    if(/back.?office|^boo$|ac.*boo/.test(p)) return 'backoffice';
+    return p; // fallback: exact
+  }
+
+  const absentGroup = posGroup(absentEmp.position);
+  const baseFilter = e =>
     e.id !== absentEmp.id &&
-    e.area === branch.area &&
     e.branch !== branch.id &&
-    e.status === 'Available'
-  );
+    e.area === branch.area &&
+    (e.status === 'Available' || !e.status);
+
+  // Pass 1: same role group
+  let pool = EMPLOYEES.filter(e => baseFilter(e) && posGroup(e.position) === absentGroup);
+
+  // Pass 2: fallback — any available staff in same area (different branch)
+  let fallback = false;
+  if(!pool.length){
+    pool = EMPLOYEES.filter(e => baseFilter(e));
+    fallback = true;
+  }
 
   if(!pool.length){
     preview.style.display='none';
@@ -1910,33 +1938,55 @@ function showCoverPreview(branch, absentEmp, date){
     return;
   }
 
-  // Sort by fairness: never covered first, then lowest coverCount, then longest since last cover
+  // Rank by fairness: never covered → lowest coverCount → longest since last cover
   const ranked = pool.map(e => {
     const daysSince = e.lastCover
       ? Math.round((new Date()-new Date(e.lastCover))/(1000*60*60*24))
       : 9999;
     return { e, score: (e.coverCount===0?10000:0) + (100-Math.min(e.coverCount,99)*10) + Math.min(daysSince,999)/10 };
-  }).sort((a,b)=>b.score-a.score).slice(0,3);
+  }).sort((a,b)=>b.score-a.score).slice(0,5);
+
+  const matchLabel = fallback
+    ? `<span style="font-size:10px;color:#d97706;margin-left:4px">⚠ No exact match — showing available staff</span>`
+    : '';
 
   badge.textContent = pool.length + ' eligible';
-  list.innerHTML = ranked.map((item,i)=>{
+  list.innerHTML = `<div style="margin-bottom:6px;font-size:11px;color:#6b7280">
+    Position: <strong>${absentEmp.position}</strong>${matchLabel}
+  </div>` + ranked.map((item,i)=>{
     const {e} = item;
     const br = BRANCHES.find(b=>b.id===e.branch);
+    const posMatch = posGroup(e.position)===absentGroup;
     const tag = e.coverCount===0
-      ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px">Never covered</span>'
-      : `<span style="font-size:10px;color:#6b7280">${e.coverCount} covers</span>`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;${i<ranked.length-1?'border-bottom:1px solid #d1fae5':''}">
+      ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px;font-weight:600">Never covered ⭐</span>'
+      : `<span style="font-size:10px;color:#6b7280">${e.coverCount} cover${e.coverCount!==1?'s':''}</span>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i<ranked.length-1?'border-bottom:1px solid #d1fae5':''}">
       <div>
-        <span style="font-weight:700;font-size:13px;margin-right:6px">#${i+1}</span>
+        <span style="font-weight:700;font-size:13px;color:#1D6FBB;margin-right:6px">#${i+1}</span>
         <span style="font-weight:600;font-size:13px">${e.name}</span>
-        <span style="font-size:11px;color:#6b7280;margin-left:6px">${e.position} · ${br?.name||e.branch}</span>
+        <span style="font-size:11px;color:#6b7280;margin-left:6px">${e.position}${!posMatch?' ⚠':''}  ·  ${br?.name||e.branch}</span>
       </div>
       ${tag}
     </div>`;
   }).join('');
 
+  // Auto-fill replacement name field with top pick
+  const datalist = document.getElementById('replacement-suggestions');
+  const nameInput = document.getElementById('abs-replacement-name');
+  if(datalist) datalist.innerHTML = ranked.map(item=>`<option value="${item.e.name}">`).join('');
+  if(nameInput && ranked.length && !nameInput.value) nameInput.value = ranked[0].e.name;
+
   preview.style.display='block';
   nocover.style.display='none';
+}
+
+function toggleReplacementField(){
+  const needs = document.getElementById('abs-needs-replacement').value;
+  const grp = document.getElementById('replacement-name-group');
+  const preview = document.getElementById('abs-cover-preview');
+  const nocover = document.getElementById('abs-no-cover');
+  if(grp) grp.style.display = needs==='yes' ? '' : 'none';
+  if(needs==='no'){ preview.style.display='none'; nocover.style.display='none'; }
 }
 
 function submitAbsence(){
@@ -2387,7 +2437,17 @@ function renderBranchStatus(){
   const filterArea=document.getElementById('br-filter-area')?.value||'';
   const filterHealth=document.getElementById('br-filter-health')?.value||'';
 
-  let branches=currentUser.area?BRANCHES.filter(b=>b.area===currentUser.area):BRANCHES;
+  // Update branch health dynamically from employee data
+  BRANCHES.forEach(b=>{
+    const emps=EMPLOYEES.filter(e=>e.branch===b.id);
+    const absent=ABSENCE_LOG.filter(a=>a.branch===b.id&&a.status==='Open').length;
+    if(emps.length===0) b.health='healthy';
+    else if(absent>2) b.health='critical';
+    else if(absent>0) b.health='warning';
+    else b.health='healthy';
+  });
+
+  let branches = currentUser.area ? BRANCHES.filter(b=>b.area===currentUser.area) : BRANCHES;
   if(filterArea) branches=branches.filter(b=>b.area===filterArea);
   if(filterHealth) branches=branches.filter(b=>b.health===filterHealth);
 
@@ -2585,10 +2645,10 @@ async function loadRealEmployees(){
       branch:      e.branch_id,
       position:    e.position,
       status:      e.status || 'Available',
-      coverCount:  parseInt(e.cover_count) || 0,
-      lastCover:   e.last_cover_date || null,
-      skipCount:   parseInt(e.skip_count) || 0,
-      leaveBalance:parseInt(e.leave_balance) || 21,
+      coverCount:  Math.min(parseInt(e.cover_count)||parseInt(e.coverCount)||0, 999),
+      lastCover:   e.last_cover_date || e.lastCover || null,
+      skipCount:   Math.min(parseInt(e.skip_count)||parseInt(e.skipCount)||0, 999),
+      leaveBalance:Math.min(parseInt(e.leave_balance)||parseInt(e.leaveBalance)||21, 99),
       joinDate:    e.join_date || '',
     }));
     // Merge branch health from employee data without overwriting the static BRANCHES list
