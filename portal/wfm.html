@@ -1757,37 +1757,6 @@ function confirmAssignment(empId, branchId, position, date, decisionId) {
     </div>`;
 }
 
-let pendingAssignment = null;
-function openOverrideModal(branchId, position, date) {
-  pendingAssignment = { branchId, position, date };
-  openModal('modal-override');
-}
-
-// Keep legacy assignReplacement for backward compat
-function assignReplacement(empId, branchId, position, date) {
-  confirmAssignment(empId, branchId, position, date, 'MANUAL-'+Date.now());
-}
-
-function confirmOverride() {
-  const reason = document.getElementById('override-reason').value.trim();
-  const empId  = document.getElementById('override-employee').value;
-  if (!reason) { toast('Reason is required for override', 'error'); return; }
-  if (!empId)  { toast('Select an employee', 'error'); return; }
-  if (!pendingAssignment) return;
-
-  const { branchId, position, date } = pendingAssignment;
-  const decId = 'OVR-' + Date.now();
-
-  addAuditEntry('ReplacementOverridden',
-    `OVERRIDE — Selected: ${empId} | Branch: ${branchId} | Position: ${position} | Date: ${date} | Reason: ${reason}`
-  );
-
-  confirmAssignment(empId, branchId, position, date, decId);
-
-  toast('⚠️ Override logged and assigned', 'warning');
-  closeModal('modal-override');
-  pendingAssignment = null;
-}
 let pendingAssignment=null;
 function openOverrideModal(branchId,position,date){
   pendingAssignment={branchId,position,date};
