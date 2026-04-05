@@ -1402,8 +1402,36 @@ function calcNetworkFairnessScore(){ const counts=EMPLOYEES.map(e=>e.coverCount)
 // ══════════════════════════════════════════════════════════
 
 // Persistent decision log — all replacement decisions this session
+// ════════════════════════════════════════════════════════════════════════════
+//  KIB WFM — REPLACEMENT SELECTION ENGINE  v3.0
+//  Implements: strict fairness, full auditability, skip-turn preservation,
+//              unavailability tracking, explainable decision output.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Audit log (in-memory, shown in UI) ──────────────────────────────────────
 const REPLACEMENT_DECISION_LOG = [];
 
+// ── Shared normaliser ────────────────────────────────────────────────────────
+// Used throughout so "Area 1" === "area 1", "BR-HO" === "br-ho", etc.
+function _norm(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+}
+
+// ── Position-group classifier ────────────────────────────────────────────────
+// Maps title variants to a canonical role group so "Sr. BM" === "Branch Manager"
+function _posGroup(pos) {
+  const p = _norm(pos);
+  if (/branch|manager|bom|sr bm|^bm$|abm/.test(p)) return 'manager';
+  if (/teller/.test(p))                              return 'teller';
+  if (/relation|^rm$|sr rm|acting rm|^ro$|sr ro|acting ro/.test(p)) return 'relations';
+  if (/service|^so$/.test(p))                        return 'service';
+  if (/back|^boo$/.test(p))                          return 'backoffice';
+  return p; // exact fallback
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 1 — runReplacementEngine()  (UI entry point — unchanged signature)
+// ════════════════════════════════════════════════════════════════════════════
 function runReplacementEngine() {
   const branchId  = document.getElementById('rep-branch').value;
   const position  = document.getElementById('rep-position').value;
@@ -1414,103 +1442,135 @@ function runReplacementEngine() {
     toast('Please fill all required fields', 'error');
     return;
   }
-
   const branch = BRANCHES.find(b => b.id === branchId);
   if (!branch) return;
 
-  const result = selectReplacement(branch, position, date, crossArea);
+  const result = selectReplacement(branch, position, date, crossArea, null);
   renderReplacementResults(branch, position, date, result);
 }
 
-// ── STEP 1: Main selection function ─────────────────────────────────────────
-function selectReplacement(branch, position, date, crossArea) {
-  const timestamp = new Date().toISOString();
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 2 — selectReplacement()
+//  Core engine: filters → classifies → ranks → audits → returns result
+//
+//  Parameters:
+//    branch      — the branch that needs coverage (BRANCHES object)
+//    position    — the job title that needs coverage
+//    date        — YYYY-MM-DD the coverage is needed
+//    crossArea   — true = search all areas, false = same area only
+//    absentEmpId — exclude this specific employee ID (the absent one)
+// ════════════════════════════════════════════════════════════════════════════
+function selectReplacement(branch, position, date, crossArea, absentEmpId) {
+  const timestamp    = new Date().toISOString();
+  const targetGroup  = _posGroup(position);
+  const branchArea   = _norm(branch.area);
 
-  // Build the full candidate pool — ALL employees with same position in scope
-  const allSameRole = EMPLOYEES.filter(e => {
-    if (e.position !== position)  return false; // Must match position exactly
-    if (e.id === branch.id)        return false; // Exclude absent employee if passed
-    if (!crossArea && e.area !== branch.area) return false; // Area scope
+  // ── 2a. Build full candidate pool ─────────────────────────────────────────
+  // Scope: same position-group, correct area, not the absent employee
+  const allCandidates = EMPLOYEES.filter(e => {
+    if (absentEmpId && e.id === absentEmpId) return false; // absent person excluded
+    if (_norm(e.branch) === _norm(branch.id)) return false; // cannot cover own branch
+    if (!crossArea && _norm(e.area) !== branchArea) return false; // area scope
+    if (_posGroup(e.position) !== targetGroup) return false; // must match role group
     return true;
   });
 
-  // Classify each employee: eligible or ineligible (with reason)
-  const classified = allSameRole.map(e => {
-    const ineligReason = _getIneligibilityReason(e, branch, date);
+  // ── 2b. Classify each candidate: eligible or ineligible ───────────────────
+  const classified = allCandidates.map(e => {
+    const reason = _getIneligibilityReason(e, branch, date);
     return {
-      employee:    e,
-      eligible:    ineligReason === null,
-      skipReason:  ineligReason,     // null if eligible
+      employee:   e,
+      eligible:   reason === null,
+      skipReason: reason,
     };
   });
 
   const eligible   = classified.filter(c => c.eligible).map(c => c.employee);
   const ineligible = classified.filter(c => !c.eligible);
 
-  // Rank eligible employees using strict fairness priority
+  // ── 2c. Increment unavailableCount for every ineligible candidate ──────────
+  // This tracks "how many times this employee was in the pool but couldn't take it"
+  ineligible.forEach(c => {
+    c.employee.unavailableCount = (c.employee.unavailableCount || 0) + 1;
+  });
+
+  // ── 2d. Rank eligible employees by strict fairness ─────────────────────────
   const ranked = _rankByFairness(eligible, date);
 
-  // Build full audit record
+  // ── 2e. Build full audit record ───────────────────────────────────────────
   const decisionRecord = {
-    id:           `DEC-${Date.now()}`,
+    id:         `DEC-${Date.now()}`,
     timestamp,
-    branch_id:    branch.id,
-    branch_name:  branch.name,
+    absent_emp_id:  absentEmpId || null,
+    branch_id:      branch.id,
+    branch_name:    branch.name,
     position,
+    position_group: targetGroup,
     date,
-    cross_area:   crossArea,
-    candidate_pool_size: allSameRole.length,
-    eligible_count:      eligible.length,
-    ineligible_count:    ineligible.length,
-    ranked_candidates:   ranked.map((r, i) => ({
-      rank:        i + 1,
-      emp_id:      r.employee.id,
-      name:        r.employee.name,
-      cover_count: r.employee.coverCount,
-      last_cover:  r.employee.lastCover || 'Never',
-      skip_count:  r.employee.skipCount,
-      score:       r.priorityScore,
-      reasons:     r.reasons,
+    cross_area:     crossArea,
+    candidate_pool_size:  allCandidates.length,
+    eligible_count:       eligible.length,
+    ineligible_count:     ineligible.length,
+    // Full ranked list with metrics
+    ranked_candidates: ranked.map((r, i) => ({
+      rank:             i + 1,
+      emp_id:           r.employee.id,
+      name:             r.employee.name,
+      branch:           r.employee.branch,
+      area:             r.employee.area,
+      position:         r.employee.position,
+      cover_count:      r.coverCount,
+      last_cover:       r.employee.lastCover || 'Never',
+      days_since_cover: r.daysSince === 9999 ? 'Never covered' : r.daysSince + ' days',
+      skip_bonus:       r.skipBonus,
+      unavailable_count:r.employee.unavailableCount || 0,
+      priority_score:   r.priorityScore,
+      ranking_reasons:  r.reasons,
     })),
-    skipped_ineligible:  ineligible.map(c => ({
-      emp_id:      c.employee.id,
-      name:        c.employee.name,
-      skip_reason: c.skipReason,
+    // Ineligible candidates with explicit skip reason
+    skipped_ineligible: ineligible.map(c => ({
+      emp_id:           c.employee.id,
+      name:             c.employee.name,
+      branch:           c.employee.branch,
+      position:         c.employee.position,
+      cover_count:      c.employee.coverCount || 0,
+      unavailable_count:c.employee.unavailableCount || 0,
+      skip_reason:      c.skipReason,
     })),
-    selected:     ranked.length > 0 ? {
+    selected:         ranked.length > 0 ? {
       emp_id: ranked[0].employee.id,
       name:   ranked[0].employee.name,
     } : null,
+    final_assignment: null, // filled by confirmAssignment()
   };
 
   REPLACEMENT_DECISION_LOG.unshift(decisionRecord);
 
-  return {
-    ranked,
-    ineligible,
-    decisionRecord,
-    hasResult: ranked.length > 0,
-  };
+  return { ranked, ineligible, decisionRecord, hasResult: ranked.length > 0 };
 }
 
-// ── STEP 2: Ineligibility checker ───────────────────────────────────────────
-// Returns null if eligible, or a string reason if not eligible
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 3 — _getIneligibilityReason()
+//  Returns null if eligible, or an explicit human-readable reason string.
+//  Checks are ordered from most severe to most situational.
+// ════════════════════════════════════════════════════════════════════════════
 function _getIneligibilityReason(emp, branch, date) {
-  // Rule 1: Cannot cover own branch
-  if (emp.branch === branch.id)
+
+  // R1: Cannot cover their own branch
+  if (_norm(emp.branch) === _norm(branch.id))
     return 'Same branch as the required coverage location';
 
-  // Rule 2: Must be available (not absent/on leave/already assigned)
+  // R2: Status-based exclusions (hard rules)
   if (emp.status === 'Absent')
     return 'Currently marked absent';
   if (emp.status === 'On Leave')
-    return 'Currently on leave';
+    return 'Currently on approved leave';
   if (emp.status === 'On Assignment')
-    return 'Already assigned to another coverage';
+    return 'Already assigned to another coverage on this date';
   if (emp.status === 'Unavailable')
-    return 'Marked unavailable';
+    return 'Marked unavailable by manager';
 
-  // Rule 3: Not on approved leave on the requested date
+  // R3: Has an approved leave request covering this date
   const onLeave = LEAVE_REQUESTS.some(l =>
     l.empId === emp.id &&
     l.status === 'Approved' &&
@@ -1520,31 +1580,39 @@ function _getIneligibilityReason(emp, branch, date) {
   if (onLeave)
     return `On approved leave on ${date}`;
 
-  // Rule 4: Not already in an open absence case on this date
+  // R4: Already logged as absent on this date
   const alreadyAbsent = ABSENCE_LOG.some(a =>
     a.empId === emp.id &&
     a.status === 'Open' &&
-    a.start === date
+    a.start <= date &&
+    (!a.returnDate || a.returnDate >= date)
   );
   if (alreadyAbsent)
-    return 'Has an open absence record on this date';
+    return `Has an open absence record covering ${date}`;
 
-  return null; // ← eligible
+  return null; // ← fully eligible
 }
 
-// ── STEP 3: Strict fairness ranking ─────────────────────────────────────────
-// Priority 1: never covered (coverCount === 0)  → highest
-// Priority 2: lowest coverCount
-// Priority 3: longest time since last cover (daysSince DESC)
-// Priority 4: employee ID (alphabetical, stable)
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 4 — _rankByFairness()
+//  Strict priority model (in order):
+//    P1 — Never covered before (coverCount === 0)           → highest priority
+//    P2 — Lowest total cover count                          → lower is better
+//    P3 — Longest time since last cover (daysSince DESC)    → longer = higher
+//    P4 — Skip-bonus: was eligible but unavailable before   → fairness recovery
+//    P5 — Deterministic tie-break: alphanumeric employee ID → stable, non-random
+// ════════════════════════════════════════════════════════════════════════════
 function _rankByFairness(eligibleEmployees, date) {
   if (!eligibleEmployees.length) return [];
 
-  const withMetrics = eligibleEmployees.map(e => {
-    const coverCount = e.coverCount || 0;
+  const maxCover = Math.max(...eligibleEmployees.map(e => e.coverCount || 0), 1);
+
+  const scored = eligibleEmployees.map(e => {
+    const coverCount   = e.coverCount  || 0;
+    const skipBonus    = e.skipCount   || 0;        // times previously skipped (fairness debt)
     const neverCovered = coverCount === 0;
 
-    // Days since last cover (9999 = never covered → treated as longest possible)
+    // Days since last cover — 9999 for never-covered (treated as "longest possible wait")
     let daysSince = 9999;
     if (e.lastCover) {
       daysSince = Math.max(0, Math.round(
@@ -1552,89 +1620,94 @@ function _rankByFairness(eligibleEmployees, date) {
       ));
     }
 
-    // Skip count bonus — preserves fairness for previously unavailable employees
-    const skipBonus = e.skipCount || 0;
+    // ── Score formula ──────────────────────────────────────────────────────
+    // Each priority band is scaled so P1 always dominates P2, P2 dominates P3, etc.
+    //   P1: 0 or 100,000  (never covered → always wins over anyone who has covered)
+    //   P2: 0–10,000      (inverted cover count, scaled)
+    //   P3: 0–730         (days since last cover, capped at 2 years)
+    //   P4: 0–5,000       (skip bonus × 500 — fairness recovery)
+    //   P5: small negative (alphabetical ID — deterministic, predictable tie-break)
+    const p1 = neverCovered ? 100000 : 0;
+    const p2 = maxCover > 0 ? Math.round(((maxCover - coverCount) / maxCover) * 10000) : 0;
+    const p3 = Math.min(daysSince, 730);  // cap at 2 years
+    const p4 = skipBonus * 500;
+    // P5: convert emp_id chars to a small negative score so lower ID ranks first
+    const p5 = -Array.from(e.id || '').reduce((acc, ch, i) => acc + ch.charCodeAt(0) * (i + 1), 0) / 1e6;
 
-    // Build priority score:
-    // P1: Never covered gets very high base (10000)
-    // P2: Lower cover count = higher score (inverted, scaled)
-    // P3: More days since last cover = higher score
-    // P4: Lower emp ID = slightly higher (stable tie-break)
-    const maxCoverInPool = Math.max(...eligibleEmployees.map(x => x.coverCount), 1);
-    const p1 = neverCovered ? 10000 : 0;
-    const p2 = (maxCoverInPool - coverCount) * 100;
-    const p3 = Math.min(daysSince, 365); // cap at 1 year
-    const p4Skip = skipBonus * 50;       // skip preservation boost
-    const p5 = -(e.id || '').charCodeAt(0); // deterministic tie-break (lower ID = higher)
+    const priorityScore = p1 + p2 + p3 + p4 + p5;
 
-    const priorityScore = p1 + p2 + p3 + p4Skip + p5;
-
-    // Build human-readable explanation
+    // ── Build human-readable ranking explanation ───────────────────────────
     const reasons = [];
     if (neverCovered) {
-      reasons.push('✦ Never covered before — top priority');
+      reasons.push('✦ Never covered before — highest priority (P1)');
     } else {
-      reasons.push(`Cover count: ${coverCount} (lower = higher priority)`);
+      reasons.push(`Cover count: ${coverCount} / ${maxCover} in pool → P2 score ${p2}`);
     }
-    if (e.lastCover) {
-      reasons.push(`Last covered: ${daysSince} day${daysSince !== 1 ? 's' : ''} ago`);
+    if (daysSince === 9999) {
+      reasons.push('No previous cover on record → maximum wait credit');
     } else {
-      reasons.push('No previous coverage on record');
+      reasons.push(`Last covered ${daysSince} day${daysSince !== 1 ? 's' : ''} ago → P3 score ${p3}`);
     }
     if (skipBonus > 0) {
-      reasons.push(`Skip-turn preserved: ${skipBonus} time${skipBonus > 1 ? 's' : ''} previously unavailable`);
+      reasons.push(`Skip-turn preserved: ${skipBonus}× previously unavailable → fairness credit +${p4}`);
+    }
+    if (!neverCovered && coverCount > 0 && coverCount === Math.min(...eligibleEmployees.map(e2 => e2.coverCount || 0))) {
+      reasons.push('Joint lowest cover count in pool → tie-break by last cover date');
     }
 
     return { employee: e, coverCount, neverCovered, daysSince, skipBonus, priorityScore, reasons };
   });
 
-  // Sort: highest priorityScore first
-  // Tie-break: lower employee ID (alphabetical) → deterministic, not random
-  withMetrics.sort((a, b) => {
-    if (b.priorityScore !== a.priorityScore)
+  // Sort: highest score first; equal scores break deterministically by emp ID
+  scored.sort((a, b) => {
+    if (Math.abs(b.priorityScore - a.priorityScore) > 0.0001)
       return b.priorityScore - a.priorityScore;
-    // Stable tie-break: alphabetical by employee ID
+    // Stable, deterministic tie-break — alphabetical employee ID
     return (a.employee.id || '').localeCompare(b.employee.id || '');
   });
 
-  return withMetrics;
+  return scored;
 }
 
-// ── STEP 4: Render results ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 5 — renderReplacementResults()  (UI — layout unchanged, data enriched)
+// ════════════════════════════════════════════════════════════════════════════
 function renderReplacementResults(branch, position, date, result) {
   const panel = document.getElementById('replacement-panel-result');
   const { ranked, ineligible, decisionRecord, hasResult } = result;
 
   if (!hasResult) {
-    // Show all ineligible candidates so manager understands why no result
     const ineligHtml = ineligible.length
-      ? `<div style="margin-top:16px">
-          <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">ALL CANDIDATES CHECKED — NONE ELIGIBLE:</div>
-          ${ineligible.map(c=>`
-            <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red-bg);border-radius:6px;margin-bottom:4px;font-size:12px">
-              <span style="font-weight:600">${c.employee.name}</span>
-              <span style="color:var(--red)">${c.skipReason}</span>
-            </div>`).join('')}
-        </div>` : '';
-
+      ? ineligible.map(c => `
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red-bg);border-radius:6px;margin-bottom:4px;font-size:12px">
+            <span style="font-weight:600">${c.employee.name} (${c.employee.position})</span>
+            <span style="color:var(--red)">${c.skipReason}</span>
+          </div>`).join('') : '';
     panel.innerHTML = `<div class="card"><div class="card-body" style="text-align:center;padding:40px">
       <div style="font-size:36px;margin-bottom:12px">⚠️</div>
       <div style="font-weight:700;font-size:15px;margin-bottom:6px">No Eligible Candidates Found</div>
-      <div style="color:var(--text-muted);font-size:13px">No available ${position} found for ${branch.name} on ${date}.</div>
-      ${ineligHtml}
+      <div style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+        No available <strong>${position}</strong> found for <strong>${branch.name}</strong> on ${date}.
+      </div>
+      ${ineligHtml ? '<div style="text-align:left">'+ineligHtml+'</div>' : ''}
+      <div style="margin-top:16px">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('rep-cross-area').value='yes';runReplacementEngine()">
+          🔍 Retry with Cross-Area Search
+        </button>
+      </div>
     </div></div>`;
     return;
   }
 
   const top = ranked[0];
+  const topBranch = BRANCHES.find(b => b.id === top.employee.branch);
 
-  // ── Top recommendation card ──
   let html = `
     <div class="card" style="margin-bottom:16px;border:2px solid var(--status-green)">
       <div class="card-header" style="background:var(--status-green-bg)">
         <div>
           <div class="card-title" style="color:var(--status-green)">🏆 Recommended Replacement</div>
-          <div class="card-subtitle">${position} for ${branch.name} — ${date}</div>
+          <div class="card-subtitle">${position} → ${branch.name} on ${date}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-success" onclick="confirmAssignment('${top.employee.id}','${branch.id}','${position}','${date}','${decisionRecord.id}')">
@@ -1651,20 +1724,21 @@ function renderReplacementResults(branch, position, date, result) {
           <div style="flex:1">
             <div style="font-size:15px;font-weight:700">${top.employee.name}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
-              ${top.employee.position} • ${BRANCHES.find(b=>b.id===top.employee.branch)?.name||top.employee.branch} • ${top.employee.area}
+              ${top.employee.position} · ${topBranch?.name || top.employee.branch} · ${top.employee.area}
             </div>
-            <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
               <span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">
-                ${top.neverCovered ? '⭐ Never Covered' : `${top.coverCount} cover${top.coverCount!==1?'s':''}`}
+                ${top.neverCovered ? '⭐ Never Covered' : top.coverCount + ' cover' + (top.coverCount !== 1 ? 's' : '')}
               </span>
               <span style="background:#f0fdf4;color:var(--status-green);padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">
-                ${top.daysSince===9999?'No previous cover':top.daysSince+' days since last cover'}
+                ${top.daysSince === 9999 ? 'No previous cover' : top.daysSince + ' days since last cover'}
               </span>
-              ${top.skipBonus>0?`<span style="background:#fffbeb;color:var(--status-amber);padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">⏮ ${top.skipBonus} skips preserved</span>`:''}
+              ${top.skipBonus > 0 ? `<span style="background:#fffbeb;color:var(--status-amber);padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700">⏮ ${top.skipBonus} skip(s) preserved</span>` : ''}
+              ${(top.employee.unavailableCount||0) > 0 ? `<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:10px;font-size:11px">⚠ ${top.employee.unavailableCount} time(s) unavailable</span>` : ''}
             </div>
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Why this person:</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Ranking reasons:</div>
             <div style="display:flex;flex-wrap:wrap;gap:4px">
-              ${top.reasons.map(r=>`<span style="background:rgba(29,111,187,0.08);color:var(--accent);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${r}</span>`).join('')}
+              ${top.reasons.map(r=>`<span style="background:rgba(29,111,187,.08);color:var(--accent);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${r}</span>`).join('')}
             </div>
           </div>
           <div style="text-align:center;flex-shrink:0">
@@ -1675,40 +1749,48 @@ function renderReplacementResults(branch, position, date, result) {
       </div>
     </div>`;
 
-  // ── All candidates table ──
+  // ── Full ranked candidates table ──────────────────────────────────────────
   html += `<div class="card" style="margin-bottom:16px">
     <div class="card-header">
-      <div class="card-title">📋 All Eligible Candidates (${ranked.length})</div>
-      <div style="font-size:11px;color:var(--text-muted)">Ranked by fairness algorithm</div>
+      <div class="card-title">📋 All Eligible Candidates — Ranked (${ranked.length})</div>
+      <div style="font-size:11px;color:var(--text-muted)">Decision ID: ${decisionRecord.id}</div>
     </div>
     <div class="card-body-tight">
       <table class="data-table">
         <thead><tr>
           <th>Rank</th><th>Name</th><th>Branch</th>
-          <th style="text-align:center">Cover Count</th>
+          <th style="text-align:center">Covers</th>
           <th style="text-align:center">Last Cover</th>
           <th style="text-align:center">Skips</th>
-          <th>Priority Reason</th><th></th>
+          <th style="text-align:center">Unavail.</th>
+          <th>Top Reason</th>
+          <th></th>
         </tr></thead>
         <tbody>
           ${ranked.map((r, i) => `<tr style="${i===0?'background:var(--status-green-bg)':''}">
-            <td><span style="font-weight:700;font-size:13px;color:${i===0?'var(--status-green)':i===1?'var(--accent)':'var(--text-muted)'}">#${i+1}</span></td>
+            <td><span style="font-weight:700;font-size:13px;color:${i===0?'var(--status-green)':i<3?'var(--accent)':'var(--text-muted)'}">
+              #${i+1}</span>
+            </td>
             <td><span style="font-weight:600;font-size:12px">${r.employee.name}</span></td>
             <td style="font-size:11px">${BRANCHES.find(b=>b.id===r.employee.branch)?.name||r.employee.branch}</td>
             <td style="text-align:center">
               <span style="font-weight:700;color:${r.neverCovered?'var(--status-green)':r.coverCount>4?'var(--status-red)':'var(--text)'}">
-                ${r.neverCovered?'⭐ 0':r.coverCount}
+                ${r.neverCovered ? '⭐ 0' : r.coverCount}
               </span>
             </td>
-            <td style="text-align:center;font-size:11px;font-family:var(--font-mono)">
-              ${r.employee.lastCover||'—'}
-            </td>
+            <td style="text-align:center;font-size:11px;font-family:var(--font-mono)">${r.employee.lastCover||'—'}</td>
             <td style="text-align:center">
               ${r.skipBonus>0?`<span style="color:var(--status-amber);font-weight:700">${r.skipBonus}</span>`:'<span style="color:var(--text-muted)">0</span>'}
             </td>
-            <td style="font-size:10px;color:var(--text-muted);max-width:180px">${r.reasons[0]||''}</td>
+            <td style="text-align:center">
+              ${(r.employee.unavailableCount||0)>0?`<span style="color:#d97706;font-weight:700">${r.employee.unavailableCount}</span>`:'<span style="color:var(--text-muted)">0</span>'}
+            </td>
+            <td style="font-size:10px;color:var(--text-muted);max-width:160px">${r.reasons[0]||''}</td>
             <td>
-              ${i>0?`<button class="btn btn-sm btn-secondary" onclick="confirmAssignment('${r.employee.id}','${BRANCHES.find(b=>b.id===r.employee.branch)?.id||''}','${r.employee.position}','${date}','${decisionRecord.id}')">Select</button>`:'<span style="font-size:11px;color:var(--status-green);font-weight:700">✓ Recommended</span>'}
+              ${i>0
+                ? `<button class="btn btn-sm btn-secondary" onclick="confirmAssignment('${r.employee.id}','${branch.id}','${position}','${date}','${decisionRecord.id}')">Select</button>`
+                : '<span style="font-size:11px;color:var(--status-green);font-weight:700">✓ Recommended</span>'
+              }
             </td>
           </tr>`).join('')}
         </tbody>
@@ -1716,22 +1798,29 @@ function renderReplacementResults(branch, position, date, result) {
     </div>
   </div>`;
 
-  // ── Ineligible / skipped candidates ──
+  // ── Ineligible / skipped candidates table ────────────────────────────────
   if (ineligible.length) {
     html += `<div class="card">
       <div class="card-header">
-        <div class="card-title" style="color:var(--text-muted)">⚪ Ineligible Candidates (${ineligible.length})</div>
-        <div style="font-size:11px;color:var(--text-muted)">These employees were considered but excluded</div>
+        <div class="card-title" style="color:var(--text-muted)">⛔ Ineligible Candidates (${ineligible.length}) — Considered but Excluded</div>
       </div>
       <div class="card-body-tight">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Branch</th><th>Cover Count</th><th>Reason Not Eligible</th></tr></thead>
+          <thead><tr>
+            <th>Name</th><th>Branch</th><th>Covers</th>
+            <th>Times Unavailable</th><th>Reason Excluded</th>
+          </tr></thead>
           <tbody>
             ${ineligible.map(c=>`<tr>
               <td style="font-size:12px;color:var(--text-muted)">${c.employee.name}</td>
               <td style="font-size:11px;color:var(--text-muted)">${BRANCHES.find(b=>b.id===c.employee.branch)?.name||c.employee.branch}</td>
-              <td style="font-size:12px;color:var(--text-muted)">${c.employee.coverCount}</td>
-              <td><span style="background:var(--status-red-bg);color:var(--status-red);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${c.skipReason}</span></td>
+              <td style="font-size:12px;color:var(--text-muted)">${c.employee.coverCount||0}</td>
+              <td style="text-align:center">
+                ${(c.employee.unavailableCount||0)>0
+                  ? `<span style="color:#d97706;font-weight:700">${c.employee.unavailableCount}</span>`
+                  : '<span style="color:var(--text-muted)">0</span>'}
+              </td>
+              <td><span style="background:var(--red-bg);color:var(--red);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${c.skipReason}</span></td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -1742,35 +1831,46 @@ function renderReplacementResults(branch, position, date, result) {
   panel.innerHTML = html;
 }
 
-// ── STEP 5: Confirm assignment with full audit ──────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 6 — confirmAssignment()
+//  Commits the assignment: updates employee state, tracks skips, logs audit.
+// ════════════════════════════════════════════════════════════════════════════
 function confirmAssignment(empId, branchId, position, date, decisionId) {
   const emp    = EMPLOYEES.find(e => e.id === empId);
   const branch = BRANCHES.find(b => b.id === branchId);
   if (!emp || !branch) return;
 
-  // Update employee state
-  emp.coverCount++;
-  emp.lastCover = date;
-  emp.status    = 'On Assignment';
-
-  // Increment skip count for employees ranked higher who were NOT selected
-  // (Only if they were eligible — preserves fair rotation)
   const record = REPLACEMENT_DECISION_LOG.find(d => d.id === decisionId);
+
+  // ── Update selected employee state ────────────────────────────────────────
+  emp.coverCount = (emp.coverCount || 0) + 1;
+  emp.lastCover  = date;
+  emp.status     = 'On Assignment';
+
+  // ── Skip-turn preservation ────────────────────────────────────────────────
+  // All employees ranked HIGHER than the selected one (in the original ranking)
+  // are considered "skipped" — their skip count increases so they get priority
+  // in the next selection cycle, maintaining long-term fairness.
   if (record) {
+    const selectedRank = record.ranked_candidates.findIndex(c => c.emp_id === empId);
     record.ranked_candidates.forEach((c, idx) => {
-      if (c.emp_id !== empId) {
-        // This employee was passed over — if they were #1 but not selected, preserve their turn
+      if (idx < selectedRank) {
+        // This employee was ranked higher but not selected (manager chose someone else)
         const skippedEmp = EMPLOYEES.find(e => e.id === c.emp_id);
-        if (skippedEmp && idx === 0 && c.emp_id !== empId) {
-          // Top ranked employee was not selected — this is an override or manager choice
+        if (skippedEmp) {
           skippedEmp.skipCount = (skippedEmp.skipCount || 0) + 1;
         }
       }
     });
-    record.final_assignment = { emp_id: empId, name: emp.name, assigned_at: new Date().toISOString() };
+    record.final_assignment = {
+      emp_id:      empId,
+      name:        emp.name,
+      assigned_at: new Date().toISOString(),
+      note:        empId === (record.selected?.emp_id) ? 'System recommendation accepted' : 'Manager override — different employee selected',
+    };
   }
 
-  // Log to coverage history
+  // ── Log to coverage history ───────────────────────────────────────────────
   COVERAGE_HISTORY.unshift({
     date,
     covered:     '—',
@@ -1783,32 +1883,123 @@ function confirmAssignment(empId, branchId, position, date, decisionId) {
     decision_id: decisionId,
   });
 
-  // Full audit entry
+  // ── Full audit entry ──────────────────────────────────────────────────────
   addAuditEntry(
     'ReplacementAssigned',
-    `${emp.name} assigned → ${branch.name} (${position}) on ${date} | Decision ID: ${decisionId} | Cover count now: ${emp.coverCount}`
+    `${emp.name} → ${branch.name} (${position}) on ${date} | ` +
+    `Cover #${emp.coverCount} | Decision: ${decisionId}`
   );
 
   toast(`✅ ${emp.name} assigned successfully!`, 'success');
   renderQueueState();
+  renderDashboard();
 
-  // Refresh panel to show confirmed state
+  // ── Show confirmed state in panel ─────────────────────────────────────────
   document.getElementById('replacement-panel-result').innerHTML = `
     <div class="card" style="border:2px solid var(--status-green)">
       <div class="card-body" style="text-align:center;padding:40px">
         <div style="font-size:40px;margin-bottom:12px">✅</div>
         <div style="font-size:16px;font-weight:700;color:var(--status-green);margin-bottom:8px">Assignment Confirmed</div>
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
-          <strong>${emp.name}</strong> has been assigned to cover<br>
+          <strong>${emp.name}</strong> assigned to cover
           <strong>${position}</strong> at <strong>${branch.name}</strong> on <strong>${date}</strong>
         </div>
         <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">
           Decision ID: ${decisionId}<br>
-          Cover count: ${emp.coverCount} total assignments
+          Total covers for ${emp.name}: ${emp.coverCount}
         </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="runReplacementEngine()">
+          Run Another Search
+        </button>
       </div>
     </div>`;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  STEP 7 — showCoverPreview()  (Report Absence inline preview)
+//  Reuses selectReplacement() so logic is consistent and not duplicated.
+// ════════════════════════════════════════════════════════════════════════════
+function showCoverPreview(branch, absentEmp, date) {
+  const preview  = document.getElementById('abs-cover-preview');
+  const nocover  = document.getElementById('abs-no-cover');
+  const list     = document.getElementById('abs-cover-list');
+  const badge    = document.getElementById('abs-cover-badge');
+
+  // Use full engine — same area, exclude absent employee
+  let result = selectReplacement(branch, absentEmp.position, date, false, absentEmp.id);
+
+  // Tier 2: if no eligible in same area, try cross-area
+  let tier = result.hasResult ? 1 : 2;
+  if (!result.hasResult) {
+    result = selectReplacement(branch, absentEmp.position, date, true, absentEmp.id);
+  }
+
+  if (!result.hasResult) {
+    preview.style.display = 'none';
+    nocover.style.display = 'block';
+    return;
+  }
+
+  const { ranked } = result;
+  const tierLabel = tier === 2
+    ? '<span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ Cross-area — no staff in same area available</span>'
+    : '';
+
+  badge.textContent = result.ranked.length + ' eligible';
+
+  list.innerHTML = `<div style="margin-bottom:8px;font-size:11px;color:#6b7280">
+    Covering: <strong>${absentEmp.position}</strong> at <strong>${branch.name}</strong>${tierLabel}
+  </div>` + ranked.slice(0, 5).map((r, i) => {
+    const br  = BRANCHES.find(b => b.id === r.employee.branch);
+    const tag = r.neverCovered
+      ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px;font-weight:600">⭐ Never covered</span>'
+      : `<span style="font-size:10px;color:#6b7280">${r.coverCount} cover${r.coverCount !== 1 ? 's' : ''}</span>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i < Math.min(ranked.length,5)-1?'border-bottom:1px solid #d1fae5':''}">
+      <div>
+        <span style="font-weight:700;font-size:13px;color:#1D6FBB;margin-right:6px">#${i+1}</span>
+        <span style="font-weight:600;font-size:13px">${r.employee.name}</span>
+        <span style="font-size:11px;color:#6b7280;margin-left:6px">${r.employee.position} · ${br?.name||r.employee.branch}</span>
+      </div>
+      ${tag}
+    </div>`;
+  }).join('');
+
+  // Auto-fill replacement name field with top recommendation
+  const datalist  = document.getElementById('replacement-suggestions');
+  const nameInput = document.getElementById('abs-replacement-name');
+  if (datalist)  datalist.innerHTML = ranked.slice(0,5).map(r=>`<option value="${r.employee.name}">`).join('');
+  if (nameInput && !nameInput.value) nameInput.value = ranked[0].employee.name;
+
+  preview.style.display = 'block';
+  nocover.style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  assignReplacement()  — legacy compatibility shim
+//  Called from override modal; delegates to confirmAssignment with a new log.
+// ════════════════════════════════════════════════════════════════════════════
+function assignReplacement(empId, branchId, position, date) {
+  const emp    = EMPLOYEES.find(e => e.id === empId);
+  const branch = BRANCHES.find(b => b.id === branchId);
+  if (!emp || !branch) return;
+
+  // Create a minimal decision record for audit trail
+  const decId = `OVR-${Date.now()}`;
+  REPLACEMENT_DECISION_LOG.unshift({
+    id: decId, timestamp: new Date().toISOString(),
+    branch_id: branchId, branch_name: branch.name,
+    position, date, cross_area: false,
+    candidate_pool_size: 0, eligible_count: 1, ineligible_count: 0,
+    ranked_candidates: [{ rank:1, emp_id:empId, name:emp.name }],
+    skipped_ineligible: [], selected: { emp_id: empId, name: emp.name },
+    final_assignment: null,
+    note: 'Manual override — no engine ranking performed',
+  });
+
+  confirmAssignment(empId, branchId, position, date, decId);
+}
+
+
 
 let pendingAssignment=null;
 function openOverrideModal(branchId,position,date){
@@ -1883,18 +2074,24 @@ function onAbsBranchChange(){
   if(!branch){ empSelect.innerHTML='<option value="">— Select Employee —</option>'; return; }
   const emps=EMPLOYEES.filter(e=>e.branch===branchId);
   empSelect.innerHTML='<option value="">— Select Employee —</option>'+emps.map(e=>`<option value="${e.id}">${e.name} (${e.position})</option>`).join('');
-  empSelect.onchange=()=>{
+  function refreshPreview(){
     const emp=EMPLOYEES.find(e=>e.id===empSelect.value);
     if(emp){
       document.getElementById('abs-position').value=emp.position;
-      // Show cover preview immediately
       const date=document.getElementById('abs-start').value||new Date().toISOString().slice(0,10);
+      // Clear old auto-fill so preview can re-fill
+      const nameInput=document.getElementById('abs-replacement-name');
+      if(nameInput) nameInput.value='';
       showCoverPreview(branch, emp, date);
     } else {
       document.getElementById('abs-cover-preview').style.display='none';
       document.getElementById('abs-no-cover').style.display='none';
     }
-  };
+  }
+  empSelect.onchange = refreshPreview;
+  // Also refresh preview when date changes
+  const startDate = document.getElementById('abs-start');
+  if(startDate) startDate.onchange = ()=>{ if(empSelect.value) refreshPreview(); };
 }
 
 function showCoverPreview(branch, absentEmp, date){
@@ -1903,33 +2100,53 @@ function showCoverPreview(branch, absentEmp, date){
   const list=document.getElementById('abs-cover-list');
   const badge=document.getElementById('abs-cover-badge');
 
-  // ── Position grouping — maps many title variants to a common role group ────
-  // This handles "Sr. BM" = "BM" = "Branch Manager" = "ABM" etc.
+  // ── Normalizers ────────────────────────────────────────────────────────────
+  const norm = s => (s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+
   function posGroup(pos){
-    const p = (pos||'').toLowerCase().replace(/[^a-z]/g,' ').trim();
-    if(/branch.?manager|bom|sr.*bm|^bm$|abm/.test(p)) return 'manager';
-    if(/teller|head.?teller|lead.?teller|h\.?teller/.test(p))  return 'teller';
-    if(/relation|^rm$|sr.*rm|acting.*rm|^ro$|sr.*ro|acting.*ro/.test(p)) return 'relations';
-    if(/service|^so$/.test(p)) return 'service';
-    if(/back.?office|^boo$|ac.*boo/.test(p)) return 'backoffice';
-    return p; // fallback: exact
+    const p = norm(pos);
+    if(/branch|manager|bom|sr bm|^bm$|abm/.test(p)) return 'manager';
+    if(/teller/.test(p))                              return 'teller';
+    if(/relation|^rm$|sr rm|acting rm|^ro$|sr ro|acting ro/.test(p)) return 'relations';
+    if(/service|^so$/.test(p))                        return 'service';
+    if(/back|^boo$/.test(p))                          return 'backoffice';
+    return p;
   }
 
   const absentGroup = posGroup(absentEmp.position);
-  const baseFilter = e =>
+  const branchArea  = norm(branch.area);
+
+  // ── 3-tier search: strict → same-area-any-pos → entire-network ───────────
+  // Tier 1: same role group + same area + different branch
+  let pool = EMPLOYEES.filter(e =>
     e.id !== absentEmp.id &&
-    e.branch !== branch.id &&
-    e.area === branch.area &&
-    (e.status === 'Available' || !e.status);
+    norm(e.branch) !== norm(branch.id) &&
+    norm(e.area) === branchArea &&
+    (e.status === 'Available' || !e.status) &&
+    posGroup(e.position) === absentGroup
+  );
 
-  // Pass 1: same role group
-  let pool = EMPLOYEES.filter(e => baseFilter(e) && posGroup(e.position) === absentGroup);
+  let tier = 1, fallback = false;
 
-  // Pass 2: fallback — any available staff in same area (different branch)
-  let fallback = false;
+  // Tier 2: any position, same area
   if(!pool.length){
-    pool = EMPLOYEES.filter(e => baseFilter(e));
-    fallback = true;
+    pool = EMPLOYEES.filter(e =>
+      e.id !== absentEmp.id &&
+      norm(e.branch) !== norm(branch.id) &&
+      norm(e.area) === branchArea &&
+      (e.status === 'Available' || !e.status)
+    );
+    tier = 2; fallback = true;
+  }
+
+  // Tier 3: any position, any area (cross-area)
+  if(!pool.length){
+    pool = EMPLOYEES.filter(e =>
+      e.id !== absentEmp.id &&
+      norm(e.branch) !== norm(branch.id) &&
+      (e.status === 'Available' || !e.status)
+    );
+    tier = 3; fallback = true;
   }
 
   if(!pool.length){
@@ -1946,13 +2163,15 @@ function showCoverPreview(branch, absentEmp, date){
     return { e, score: (e.coverCount===0?10000:0) + (100-Math.min(e.coverCount,99)*10) + Math.min(daysSince,999)/10 };
   }).sort((a,b)=>b.score-a.score).slice(0,5);
 
-  const matchLabel = fallback
-    ? `<span style="font-size:10px;color:#d97706;margin-left:4px">⚠ No exact match — showing available staff</span>`
-    : '';
+  const tierLabel = {
+    1: '',
+    2: '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ No exact position match — showing all available in area</span>',
+    3: '<span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ Cross-area — no staff in same area available</span>'
+  }[tier];
 
   badge.textContent = pool.length + ' eligible';
   list.innerHTML = `<div style="margin-bottom:6px;font-size:11px;color:#6b7280">
-    Position: <strong>${absentEmp.position}</strong>${matchLabel}
+    Position: <strong>${absentEmp.position}</strong>${tierLabel}
   </div>` + ranked.map((item,i)=>{
     const {e} = item;
     const br = BRANCHES.find(b=>b.id===e.branch);
@@ -2645,10 +2864,11 @@ async function loadRealEmployees(){
       branch:      e.branch_id,
       position:    e.position,
       status:      e.status || 'Available',
-      coverCount:  Math.min(parseInt(e.cover_count)||parseInt(e.coverCount)||0, 999),
+      // Guard: phone numbers (7+ digits) are never valid cover counts — default to 0
+      coverCount:  (v => v > 0 && v <= 100 ? v : 0)(parseInt(e.cover_count)||parseInt(e.coverCount)||0),
       lastCover:   e.last_cover_date || e.lastCover || null,
-      skipCount:   Math.min(parseInt(e.skip_count)||parseInt(e.skipCount)||0, 999),
-      leaveBalance:Math.min(parseInt(e.leave_balance)||parseInt(e.leaveBalance)||21, 99),
+      skipCount:   (v => v > 0 && v <= 100 ? v : 0)(parseInt(e.skip_count)||parseInt(e.skipCount)||0),
+      leaveBalance:(v => v > 0 && v <= 60  ? v : 21)(parseInt(e.leave_balance)||parseInt(e.leaveBalance)||21),
       joinDate:    e.join_date || '',
     }));
     // Merge branch health from employee data without overwriting the static BRANCHES list
@@ -2731,18 +2951,33 @@ async function submitAbsence(){
   if(!branchId||!empId||!absType||!start){toast('Fill required fields','error');return;}
 
   if(CONFIG.USE_API){
+    const emp     = EMPLOYEES.find(e=>e.id===empId);
+    const branch  = BRANCHES.find(b=>b.id===branchId);
+    const repName = document.getElementById('abs-replacement-name')?.value?.trim()||'';
+    const needsRep= document.getElementById('abs-needs-replacement')?.value||'yes';
     const res = await WFM_API.post('wfm-absence', {
-      emp_id: empId, absence_type: absType, start_date: start,
-      return_date: document.getElementById('abs-return').value,
-      notes: document.getElementById('abs-notes').value,
-      reported_by: currentUser.username
+      emp_id:            empId,
+      absence_type:      absType,
+      start_date:        start,
+      return_date:       document.getElementById('abs-return').value||'',
+      notes:             document.getElementById('abs-notes').value||'',
+      reported_by:       currentUser.username||currentUser.full_name||'',
+      branch_id:         branchId,
+      branch_name:       branch?.name||'',
+      position:          emp?.position||'',
+      area:              branch?.area||'',
+      replacement_name:  repName,
+      needs_replacement: needsRep,
     });
     const absRes = Array.isArray(res) ? (res[0]||{}) : (res||{});
     if(absRes && absRes.success){
-      toast('✅ Absence recorded in Google Sheets','success');
-      await loadRealAbsences();
+      const msg = absRes.conflict_warning
+        ? '⚠️ Recorded with conflict: '+absRes.conflict_warning
+        : '✅ Absence recorded — '+absRes.absence_id;
+      toast(msg, absRes.conflict_warning?'warning':'success');
+      await loadRealDashboard();
     } else {
-      toast('API unavailable — using local mode','warning');
+      toast(absRes?.error||'API failed — saved locally','warning');
     }
   }
   // Always run local version too
