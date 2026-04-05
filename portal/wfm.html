@@ -448,9 +448,21 @@ textarea.form-control{resize:vertical;min-height:80px}
                   <option value="no">No — Record Only</option>
                 </select>
               </div>
-              <div style="display:flex;gap:10px;justify-content:flex-end">
+              <!-- Live Replacement Preview (shows before submit) -->
+              <div id="abs-cover-preview" style="display:none;margin-top:4px;padding:14px 16px;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <div style="font-weight:700;color:#16a34a;font-size:13px">🤖 Recommended Cover Staff</div>
+                  <span id="abs-cover-badge" class="badge badge-green" style="font-size:11px"></span>
+                </div>
+                <div id="abs-cover-list"></div>
+              </div>
+              <div id="abs-no-cover" style="display:none;margin-top:4px;padding:12px 16px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;font-size:13px;color:#dc2626">
+                ⚠️ No eligible cover staff found for this position in your area.
+              </div>
+
+              <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
                 <button class="btn btn-secondary" onclick="clearAbsForm()">Clear</button>
-                <button class="btn btn-primary" onclick="submitAbsence()">Submit & Find Replacement</button>
+                <button class="btn btn-primary" id="abs-submit-btn" onclick="submitAbsence()">Submit & Confirm Cover</button>
               </div>
             </div>
           </div>
@@ -1857,13 +1869,74 @@ function onAbsBranchChange(){
   const userBranches=currentUser.area?BRANCHES.filter(b=>b.area===currentUser.area):BRANCHES;
   const branch=userBranches.find(b=>b.id===branchId);
   const empSelect=document.getElementById('abs-employee');
+  // Reset preview
+  document.getElementById('abs-cover-preview').style.display='none';
+  document.getElementById('abs-no-cover').style.display='none';
   if(!branch){ empSelect.innerHTML='<option value="">— Select Employee —</option>'; return; }
   const emps=EMPLOYEES.filter(e=>e.branch===branchId);
   empSelect.innerHTML='<option value="">— Select Employee —</option>'+emps.map(e=>`<option value="${e.id}">${e.name} (${e.position})</option>`).join('');
   empSelect.onchange=()=>{
     const emp=EMPLOYEES.find(e=>e.id===empSelect.value);
-    if(emp) document.getElementById('abs-position').value=emp.position;
+    if(emp){
+      document.getElementById('abs-position').value=emp.position;
+      // Show cover preview immediately
+      const date=document.getElementById('abs-start').value||new Date().toISOString().slice(0,10);
+      showCoverPreview(branch, emp, date);
+    } else {
+      document.getElementById('abs-cover-preview').style.display='none';
+      document.getElementById('abs-no-cover').style.display='none';
+    }
   };
+}
+
+function showCoverPreview(branch, absentEmp, date){
+  const preview=document.getElementById('abs-cover-preview');
+  const nocover=document.getElementById('abs-no-cover');
+  const list=document.getElementById('abs-cover-list');
+  const badge=document.getElementById('abs-cover-badge');
+
+  // Use selectReplacement engine but exclude the absent employee
+  const pool = EMPLOYEES.filter(e =>
+    e.position === absentEmp.position &&
+    e.id !== absentEmp.id &&
+    e.area === branch.area &&
+    e.branch !== branch.id &&
+    e.status === 'Available'
+  );
+
+  if(!pool.length){
+    preview.style.display='none';
+    nocover.style.display='block';
+    return;
+  }
+
+  // Sort by fairness: never covered first, then lowest coverCount, then longest since last cover
+  const ranked = pool.map(e => {
+    const daysSince = e.lastCover
+      ? Math.round((new Date()-new Date(e.lastCover))/(1000*60*60*24))
+      : 9999;
+    return { e, score: (e.coverCount===0?10000:0) + (100-Math.min(e.coverCount,99)*10) + Math.min(daysSince,999)/10 };
+  }).sort((a,b)=>b.score-a.score).slice(0,3);
+
+  badge.textContent = pool.length + ' eligible';
+  list.innerHTML = ranked.map((item,i)=>{
+    const {e} = item;
+    const br = BRANCHES.find(b=>b.id===e.branch);
+    const tag = e.coverCount===0
+      ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px">Never covered</span>'
+      : `<span style="font-size:10px;color:#6b7280">${e.coverCount} covers</span>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;${i<ranked.length-1?'border-bottom:1px solid #d1fae5':''}">
+      <div>
+        <span style="font-weight:700;font-size:13px;margin-right:6px">#${i+1}</span>
+        <span style="font-weight:600;font-size:13px">${e.name}</span>
+        <span style="font-size:11px;color:#6b7280;margin-left:6px">${e.position} · ${br?.name||e.branch}</span>
+      </div>
+      ${tag}
+    </div>`;
+  }).join('');
+
+  preview.style.display='block';
+  nocover.style.display='none';
 }
 
 function submitAbsence(){
@@ -2030,28 +2103,35 @@ function renderLeaveRequests(){
 async function approveLeave(id){
   const lv=LEAVE_REQUESTS.find(l=>l.id===id);
   if(!lv) return;
-  // Conflict check before approval
   const emp=EMPLOYEES.find(e=>e.id===lv.empId);
   const conflicts=emp?detectLeaveConflict(emp,lv.from,lv.to):[];
   if(conflicts.length){toast('Cannot approve — conflict: '+conflicts[0],'error');return;}
 
-  // Optimistic UI update
+  // Update in memory
   lv.status='Approved';
+  if(emp) emp.status='On Leave';
+  addAuditEntry('LeaveApproved',`${lv.id} — ${lv.employee} ${lv.type}`);
+
+  // Switch filter to "Approved" so change is visible, then re-render
+  const filterEl=document.getElementById('lv-filter-status');
+  if(filterEl) filterEl.value='Approved';
   renderLeaveRequests();
   renderCalendar();
-  addAuditEntry('LeaveApproved',`${lv.id} — ${lv.employee} ${lv.type}`);
-  toast('Leave approved','success');
+  renderDashboard();
+  toast('✅ Leave approved','success');
 
-  // Persist to Google Sheets via n8n
+  // Persist to Sheets
   if(CONFIG.USE_API){
     try{
-      await WFM_API.post('approve-leave',{
+      const res = await WFM_API.post('approve-leave',{
         leave_id:    lv.id,
         action:      'Approved',
         approved_by: currentUser.full_name || currentUser.username,
         approved_at: new Date().toISOString().slice(0,16).replace('T',' '),
       });
-    } catch(e){ console.warn('approve-leave API error:',e); }
+      if(res && res.success) toast('✅ Saved to Google Sheets','success');
+      else toast('⚠️ Approved locally — Sheets sync failed','warning');
+    } catch(e){ console.warn('approve-leave API error:',e); toast('⚠️ Approved locally — check network','warning'); }
   }
 }
 
@@ -2059,21 +2139,28 @@ async function rejectLeave(id){
   const lv=LEAVE_REQUESTS.find(l=>l.id===id);
   if(!lv) return;
 
-  // Optimistic UI update
+  // Update in memory
   lv.status='Rejected';
-  renderLeaveRequests();
   addAuditEntry('LeaveRejected',`${lv.id} — ${lv.employee} ${lv.type}`);
+
+  // Switch filter to "Rejected" so change is visible, then re-render
+  const filterEl=document.getElementById('lv-filter-status');
+  if(filterEl) filterEl.value='Rejected';
+  renderLeaveRequests();
+  renderDashboard();
   toast('Leave rejected','warning');
 
-  // Persist to Google Sheets via n8n
+  // Persist to Sheets
   if(CONFIG.USE_API){
     try{
-      await WFM_API.post('approve-leave',{
+      const res = await WFM_API.post('approve-leave',{
         leave_id:    lv.id,
         action:      'Rejected',
         approved_by: currentUser.full_name || currentUser.username,
         approved_at: new Date().toISOString().slice(0,16).replace('T',' '),
       });
+      if(res && res.success) toast('Rejection saved to Google Sheets','success');
+      else toast('⚠️ Rejected locally — Sheets sync failed','warning');
     } catch(e){ console.warn('reject-leave API error:',e); }
   }
 }
@@ -2513,65 +2600,66 @@ async function loadRealEmployees(){
   } else {
     console.warn('⚠️ wfm-employees API failed or empty — using empty employee list');
   }
-  // Always re-render after attempt (success or fail) so UI reflects current state
+  // Re-render after employees load
   populateDropdowns();
   renderEmployeeTable();
   renderQueueState();
   renderBranchStatus();
-  renderDashboard();
+  // Dashboard rendered separately by loadRealDashboard
 }
 
-async function loadRealAbsences(){
+// Single wfm-dashboard call — loads leaves + absences together, renders once
+async function loadRealDashboard(){
   const res = await WFM_API.get('wfm-dashboard');
-  if(res && res.success && res.open_absences && res.open_absences.length > 0){
-    ABSENCE_LOG = res.open_absences.map(a => ({
-      id:          a.absence_id,
-      employee:    a.employee_name,
-      empId:       a.emp_id,
-      branch:      a.branch_id,
-      branchName:  a.branch_name,
-      position:    a.position,
-      type:        a.absence_type,
-      start:       a.start_date,
-      returnDate:  a.return_date || '',
-      status:      a.status,
-      replacement: a.replacement_name || 'Pending',
-      notes:       a.notes || ''
-    }));
-    console.log('✅ Absences loaded from API:', ABSENCE_LOG.length);
+  if(res && res.success){
+    if(res.pending_leaves && res.pending_leaves.length > 0){
+      const apiLeaves = res.pending_leaves.map(l => ({
+        id:       l.leave_id,
+        employee: l.employee_name,
+        empId:    l.emp_id,
+        branch:   l.branch_id,
+        position: l.position,
+        type:     l.leave_type,
+        from:     l.from_date,
+        to:       l.to_date,
+        days:     parseInt(l.days) || 1,
+        status:   l.status,
+        notes:    l.notes || '',
+        submittedAt: l.submitted_at || ''
+      }));
+      LEAVE_REQUESTS = [...apiLeaves, ...LEAVE_REQUESTS.filter(l => !apiLeaves.find(a => a.id === l.id))];
+      console.log('✅ Leaves:', LEAVE_REQUESTS.length);
+    }
+    if(res.open_absences && res.open_absences.length > 0){
+      ABSENCE_LOG = res.open_absences.map(a => ({
+        id:          a.absence_id,
+        employee:    a.employee_name,
+        empId:       a.emp_id,
+        branch:      a.branch_id,
+        branchName:  a.branch_name,
+        position:    a.position,
+        type:        a.absence_type,
+        start:       a.start_date,
+        returnDate:  a.return_date || '',
+        status:      a.status,
+        replacement: a.replacement_name || 'Pending',
+        notes:       a.notes || ''
+      }));
+      console.log('✅ Absences:', ABSENCE_LOG.length);
+    }
   } else {
-    console.warn('⚠️ wfm-dashboard absences empty or API failed');
+    console.warn('⚠️ wfm-dashboard API failed');
   }
+  // Single render pass
+  renderLeaveRequests();
+  renderCalendar();
   loadAbsenceCases();
   renderDashboard();
 }
 
-async function loadRealLeaves(){
-  const res = await WFM_API.get('wfm-dashboard');
-  if(res && res.success && res.pending_leaves && res.pending_leaves.length > 0){
-    const apiLeaves = res.pending_leaves.map(l => ({
-      id:       l.leave_id,
-      employee: l.employee_name,
-      empId:    l.emp_id,
-      branch:   l.branch_id,
-      position: l.position,
-      type:     l.leave_type,
-      from:     l.from_date,
-      to:       l.to_date,
-      days:     parseInt(l.days) || 1,
-      status:   l.status,
-      notes:    l.notes || '',
-      submittedAt: l.submitted_at || ''
-    }));
-    LEAVE_REQUESTS = [...apiLeaves, ...LEAVE_REQUESTS.filter(l => !apiLeaves.find(a => a.id === l.id))];
-    console.log('✅ Leaves loaded from API:', LEAVE_REQUESTS.length);
-  } else {
-    console.warn('⚠️ wfm-dashboard leaves empty or API failed');
-  }
-  renderLeaveRequests();
-  renderCalendar();
-  renderDashboard();
-}
+// Aliases — called from initApp and submitAbsence
+async function loadRealLeaves()   { await loadRealDashboard(); }
+async function loadRealAbsences() { /* handled by loadRealDashboard */ }
 
 // Override submitAbsence to call real API
 const _origSubmitAbsence = submitAbsence;
