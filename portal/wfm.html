@@ -1030,6 +1030,33 @@ const NAV_ITEMS = [
   {id:'settings',    label:'Settings',         icon:'⚙️',  section:'SYSTEM'},
 ];
 
+// ── GLOBAL DATA ARRAYS (always declared, populated by API or mock) ──────────
+let BRANCHES = [
+  // Area 1
+  {id:'BR-HO', name:'Head Office',       area:'Area 1', health:'healthy'},
+  {id:'BR-JA', name:'Jaber Alahmad',     area:'Area 1', health:'healthy'},
+  {id:'BR-DA', name:'Daia',              area:'Area 1', health:'healthy'},
+  {id:'BR-EM', name:'Enmall',            area:'Area 1', health:'healthy'},
+  {id:'BR-SA', name:'Salmiya',           area:'Area 1', health:'healthy'},
+  {id:'BR-WJ', name:'West Jahra',        area:'Area 1', health:'healthy'},
+  {id:'BR-AD', name:'Aadailiya',         area:'Area 1', health:'healthy'},
+  {id:'BR-MI', name:'Ministry Complex',  area:'Area 1', health:'healthy'},
+  // Area 2
+  {id:'BR-AH', name:'Ahmadi',            area:'Area 2', health:'healthy'},
+  {id:'BR-RM', name:'Remal Mall',        area:'Area 2', health:'healthy'},
+  {id:'BR-FI', name:'Fintas',            area:'Area 2', health:'healthy'},
+  {id:'BR-SS', name:'Sabah Al Salem',    area:'Area 2', health:'healthy'},
+  {id:'BR-FA', name:'Farwaniya',         area:'Area 2', health:'healthy'},
+  {id:'BR-SD', name:'Siddeeq',           area:'Area 2', health:'healthy'},
+  {id:'BR-MK', name:'Mubarak Al Kabeer', area:'Area 2', health:'healthy'},
+  {id:'BR-ZA', name:'Zahraa',            area:'Area 2', health:'healthy'},
+];
+let EMPLOYEES       = [];
+let LEAVE_REQUESTS  = [];
+let ABSENCE_LOG     = [];
+let COVERAGE_HISTORY= [];
+let AUDIT_LOG       = [];
+
 // ── INIT APP ────────────────────────────────────────────────
 let calYear=2026, calMonth=3; // April 2026
 
@@ -1154,10 +1181,16 @@ function navigateTo(page){
 // ── DASHBOARD ────────────────────────────────────────────────
 function renderDashboard(){
   const body=document.getElementById('page-dashboard');
-  const openAbsences=ABSENCE_LOG.filter(a=>a.status==='Open').length;
-  const pendingLeaves=LEAVE_REQUESTS.filter(l=>l.status==='Pending').length;
-  const availableEmps=EMPLOYEES.filter(e=>e.status==='Available').length;
-  const totalEmps=EMPLOYEES.length;
+  if(!body) return;
+  // Area filter
+  const myEmps   = currentUser.area ? EMPLOYEES.filter(e=>e.area===currentUser.area) : EMPLOYEES;
+  const myBranches = currentUser.area ? BRANCHES.filter(b=>b.area===currentUser.area) : BRANCHES;
+  const myAbsences = currentUser.area ? ABSENCE_LOG.filter(a=>myBranches.find(b=>b.id===a.branch)) : ABSENCE_LOG;
+  const myLeaves   = currentUser.area ? LEAVE_REQUESTS.filter(l=>myBranches.find(b=>b.id===l.branch)) : LEAVE_REQUESTS;
+  const openAbsences=myAbsences.filter(a=>a.status==='Open').length;
+  const pendingLeaves=myLeaves.filter(l=>l.status==='Pending').length;
+  const availableEmps=myEmps.filter(e=>e.status==='Available').length;
+  const totalEmps=myEmps.length;
   const conflicts=detectAllConflicts().length;
   const mosFrequent=getMostFrequentCoverer();
   const mostAbsent=getMostAbsent();
@@ -2458,7 +2491,6 @@ window.addEventListener('load', () => {
 async function loadRealEmployees(){
   const res = await WFM_API.get('wfm-employees');
   if(res && res.success && res.employees && res.employees.length > 0){
-    // Map API fields to local format
     EMPLOYEES = res.employees.map(e => ({
       id:          e.emp_id,
       name:        e.full_name,
@@ -2472,66 +2504,73 @@ async function loadRealEmployees(){
       leaveBalance:parseInt(e.leave_balance) || 21,
       joinDate:    e.join_date || '',
     }));
-    // Also map branches from employee data
-    const branchMap = {};
+    // Merge branch health from employee data without overwriting the static BRANCHES list
     EMPLOYEES.forEach(e => {
-      if(!branchMap[e.branch]){
-        branchMap[e.branch] = {id:e.branch, name:e.area==='Area 1'?e.area+' '+e.branch:e.branch, area:e.area, health:'healthy'};
-      }
+      const b = BRANCHES.find(b => b.id === e.branch);
+      if(!b && e.branch) BRANCHES.push({id:e.branch, name:e.branch, area:e.area||'', health:'healthy'});
     });
-    renderEmployeeTable();
-    renderQueueState();
-    console.log('✅ Employees loaded from Google Sheets:', EMPLOYEES.length);
+    console.log('✅ Employees loaded from API:', EMPLOYEES.length);
+  } else {
+    console.warn('⚠️ wfm-employees API failed or empty — using empty employee list');
   }
+  // Always re-render after attempt (success or fail) so UI reflects current state
+  populateDropdowns();
+  renderEmployeeTable();
+  renderQueueState();
+  renderBranchStatus();
+  renderDashboard();
 }
 
 async function loadRealAbsences(){
   const res = await WFM_API.get('wfm-dashboard');
-  if(res && res.success){
-    if(res.open_absences && res.open_absences.length > 0){
-      ABSENCE_LOG = res.open_absences.map(a => ({
-        id:          a.absence_id,
-        employee:    a.employee_name,
-        empId:       a.emp_id,
-        branch:      a.branch_id,
-        branchName:  a.branch_name,
-        position:    a.position,
-        type:        a.absence_type,
-        start:       a.start_date,
-        returnDate:  a.return_date || '',
-        status:      a.status,
-        replacement: a.replacement_name || 'Pending',
-        notes:       a.notes || ''
-      }));
-    }
-    loadAbsenceCases();
+  if(res && res.success && res.open_absences && res.open_absences.length > 0){
+    ABSENCE_LOG = res.open_absences.map(a => ({
+      id:          a.absence_id,
+      employee:    a.employee_name,
+      empId:       a.emp_id,
+      branch:      a.branch_id,
+      branchName:  a.branch_name,
+      position:    a.position,
+      type:        a.absence_type,
+      start:       a.start_date,
+      returnDate:  a.return_date || '',
+      status:      a.status,
+      replacement: a.replacement_name || 'Pending',
+      notes:       a.notes || ''
+    }));
+    console.log('✅ Absences loaded from API:', ABSENCE_LOG.length);
+  } else {
+    console.warn('⚠️ wfm-dashboard absences empty or API failed');
   }
+  loadAbsenceCases();
+  renderDashboard();
 }
 
 async function loadRealLeaves(){
   const res = await WFM_API.get('wfm-dashboard');
-  if(res && res.success && res.pending_leaves){
-    // Merge with existing
-    if(res.pending_leaves.length > 0){
-      const apiLeaves = res.pending_leaves.map(l => ({
-        id:       l.leave_id,
-        employee: l.employee_name,
-        empId:    l.emp_id,
-        branch:   l.branch_id,
-        position: l.position,
-        type:     l.leave_type,
-        from:     l.from_date,
-        to:       l.to_date,
-        days:     parseInt(l.days) || 1,
-        status:   l.status,
-        notes:    l.notes || '',
-        submittedAt: l.submitted_at || ''
-      }));
-      LEAVE_REQUESTS = [...apiLeaves, ...LEAVE_REQUESTS.filter(l => !apiLeaves.find(a => a.id === l.id))];
-    }
-    renderLeaveRequests();
-    renderCalendar();
+  if(res && res.success && res.pending_leaves && res.pending_leaves.length > 0){
+    const apiLeaves = res.pending_leaves.map(l => ({
+      id:       l.leave_id,
+      employee: l.employee_name,
+      empId:    l.emp_id,
+      branch:   l.branch_id,
+      position: l.position,
+      type:     l.leave_type,
+      from:     l.from_date,
+      to:       l.to_date,
+      days:     parseInt(l.days) || 1,
+      status:   l.status,
+      notes:    l.notes || '',
+      submittedAt: l.submitted_at || ''
+    }));
+    LEAVE_REQUESTS = [...apiLeaves, ...LEAVE_REQUESTS.filter(l => !apiLeaves.find(a => a.id === l.id))];
+    console.log('✅ Leaves loaded from API:', LEAVE_REQUESTS.length);
+  } else {
+    console.warn('⚠️ wfm-dashboard leaves empty or API failed');
   }
+  renderLeaveRequests();
+  renderCalendar();
+  renderDashboard();
 }
 
 // Override submitAbsence to call real API
