@@ -1920,6 +1920,39 @@ function confirmAssignment(empId, branchId, position, date, decisionId) {
   renderQueueState();
   renderDashboard();
 
+  // ── Persist to Google Sheets via WFM4 ────────────────────────────────────
+  if (CONFIG.USE_API) {
+    const absenceId = record?.absent_emp_id
+      ? (window._lastAbsenceId || '')
+      : '';
+    WFM_API.post('wfm-coverage', {
+      covered_emp_id:     record?.absent_emp_id || '',
+      covered_name:       record?.absent_emp_name || '',
+      replacement_emp_id: empId,
+      replacement_name:   emp.name,
+      branch_id:          branchId,
+      branch_name:        branch.name,
+      position,
+      date,
+      absence_id:         absenceId,
+      decision_id:        decisionId,
+      assigned_by:        currentUser?.username || currentUser?.full_name || '',
+      note:               record?.final_assignment?.note || 'System recommendation accepted',
+    }).then(res => {
+      if (res && res.success) {
+        toast(`✅ Coverage saved to Sheets (${res.coverage_id})`, 'success');
+        // Update employee cover_count in WFM_Employees sheet
+        WFM_API.post('wfm-update-cover-count', {
+          emp_id:      empId,
+          cover_count: emp.coverCount,
+          last_cover:  date,
+        });
+      } else {
+        toast('⚠️ Coverage saved locally only — Sheets sync failed', 'warning');
+      }
+    }).catch(() => toast('⚠️ Coverage saved locally only', 'warning'));
+  }
+
   // ── Show confirmed state in panel ─────────────────────────────────────────
   document.getElementById('replacement-panel-result').innerHTML = `
     <div class="card" style="border:2px solid var(--status-green)">
@@ -2804,10 +2837,11 @@ async function loadRealEmployees(){
       position:    e.position,
       status:      e.status || 'Available',
       // Guard: phone numbers (7+ digits) are never valid cover counts — default to 0
-      coverCount:  (v => v > 0 && v <= 100 ? v : 0)(parseInt(e.cover_count)||parseInt(e.coverCount)||0),
+      // _safeInt: only accept values where the raw string is purely numeric (no "01-Mar" dates)
+      coverCount:  (()=>{ const raw=(e.cover_count??e.coverCount??'').toString().trim(); return /^\d+$/.test(raw) ? Math.min(parseInt(raw),999) : 0; })(),
       lastCover:   e.last_cover_date || e.lastCover || null,
-      skipCount:   (v => v > 0 && v <= 100 ? v : 0)(parseInt(e.skip_count)||parseInt(e.skipCount)||0),
-      leaveBalance:(v => v > 0 && v <= 60  ? v : 21)(parseInt(e.leave_balance)||parseInt(e.leaveBalance)||21),
+      skipCount:   (()=>{ const raw=(e.skip_count??e.skipCount??'').toString().trim(); return /^\d+$/.test(raw) ? Math.min(parseInt(raw),999) : 0; })(),
+      leaveBalance:(()=>{ const raw=(e.leave_balance??e.leaveBalance??'').toString().trim(); return /^\d+$/.test(raw) ? Math.min(parseInt(raw),60) : 21; })(),
       joinDate:    e.join_date || '',
     }));
     // Merge branch health from employee data without overwriting the static BRANCHES list
