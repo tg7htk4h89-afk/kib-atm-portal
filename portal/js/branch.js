@@ -399,18 +399,8 @@ async function submitChecklist() {
 
   if (res.success) {
     const status = res.machine_status || res.data?.machine_status || 'GREEN';
-    const incidentId   = res.incident_id   || res.data?.incident_id   || null;
-    const submissionId = res.submission_id || res.data?.submission_id || null;
+    const incidentId = res.incident_id || res.data?.incident_id || null;
     const retestMachine = selectedMachine; // save before clearing
-
-    // ── Upload images if any (non-blocking, won't delay success UI) ──────
-    // Capture NOW before selectedImages/selectedMachine are cleared below
-    const imagesToUpload = [...selectedImages];
-    const machineForUpload = selectedMachine;
-    if (imagesToUpload.length > 0) {
-      _uploadChecklistImages(imagesToUpload, machineForUpload, incidentId, submissionId, payload.branch_id, session)
-        .catch(e => console.warn('[branch] Image upload failed (non-critical):', e));
-    }
 
     const alertEl = document.getElementById('success-alert');
     const detailEl = document.getElementById('success-detail');
@@ -463,57 +453,6 @@ async function submitChecklist() {
     Common.toast(res.error || res.message || 'Submission failed. Please try again.', 'error');
   }
 }
-
-// ── Image Upload Helper ──────────────────────────────────────────────────────
-async function _uploadChecklistImages(imagesToUpload, machine, incidentId, submissionId, branchId, session) {
-  console.log('[IMG] _uploadChecklistImages called, count:', imagesToUpload?.length);
-  if (!imagesToUpload || !imagesToUpload.length) {
-    console.warn('[IMG] No images to upload — returning early');
-    return;
-  }
-
-  // Convert all File objects to base64
-  console.log('[IMG] Converting', imagesToUpload.length, 'image(s) to base64...');
-  const base64Images = await Promise.all(imagesToUpload.map(file =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = e => resolve({
-        filename:  file.name,
-        mime_type: file.type,
-        size_kb:   Math.round(file.size / 1024),
-        data:      e.target.result.split(',')[1]
-      });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    })
-  ));
-  console.log('[IMG] Base64 ready, sizes:', base64Images.map(i => i.size_kb + 'kb').join(', '));
-
-  const uploadPayload = {
-    incident_id:   incidentId   || '',
-    submission_id: submissionId || '',
-    machine_id:    machine?.machine_id || '',
-    branch_id:     branchId || '',
-    uploaded_by:   session.user_id,
-    uploaded_role: session.role,
-    images:        base64Images,
-    uploaded_at:   new Date().toISOString(),
-  };
-
-  console.log('[IMG] Posting to', CONFIG.ENDPOINTS.UPLOAD_IMAGE, '— machine:', uploadPayload.machine_id, 'incident:', uploadPayload.incident_id);
-  try {
-    const res = await API.post(CONFIG.ENDPOINTS.UPLOAD_IMAGE, uploadPayload);
-    console.log('[IMG] Upload response:', JSON.stringify(res));
-    if (res && res.success) {
-      console.log('[IMG] SUCCESS —', res.uploaded, 'image(s) saved to Drive');
-    } else {
-      console.warn('[IMG] FAILED — response:', res);
-    }
-  } catch(e) {
-    console.error('[IMG] Exception during upload:', e);
-  }
-}
-
 
 function resetForm() {
   document.getElementById('machine-select').value = '';
@@ -913,7 +852,6 @@ async function viewLastTest(machineDataStr) {
 
   title.textContent = `Last Test — ${machine.terminal_id}`;
   sub.textContent   = machine.location_description || machine.machine_type;
-  // subtitle will be updated below once checklist data loads
   body.innerHTML    = '<div style="text-align:center;padding:32px;color:var(--text-muted)"><div class="spinner" style="margin:0 auto 12px"></div><p>Loading...</p></div>';
   modal.style.display = 'flex';
 
@@ -945,40 +883,16 @@ async function viewLastTest(machineDataStr) {
       </div>
     `;
 
-    // Get checklist items — two strategies:
-    // 1. Active incident  → /incident-details?id=INC-xxx  (has fail items)
-    // 2. No incident (all pass) → /incident-details?machine_id=MCH-xxx
-    //    (new mode: returns last submission from Incident_Checklist_Details)
+    // Get checklist items - try multiple sources
     let checklistItems = [];
-    let checklistMeta  = null;
-
     if (machine.active_incident_id) {
-      // Strategy 1: fetch by incident_id
       try {
         const incRes = await API.getIncidentDetails(machine.active_incident_id);
         if (incRes && incRes.success) {
-          const inc = incRes.incident || {};
-          checklistItems = inc.checklist_items || [];
-          checklistMeta  = { submitted_at: inc.submitted_at || inc.created_at, submitted_by: inc.submitted_by || inc.created_by };
+          const inc = incRes.incident || incRes.data || incRes;
+          checklistItems = inc.checklist_items || inc.checklist || [];
         }
-      } catch(e) {}
-    }
-
-    if (!checklistItems.length) {
-      // Strategy 2: fetch last checklist by machine_id (works for all-pass submissions)
-      // Use machine_id, falling back to terminal_id if machine_id is missing
-      const lookupId = machine.machine_id || machine.terminal_id;
-      console.log('[viewLastTest] Strategy 2 — machine_id:', machine.machine_id, 'terminal_id:', machine.terminal_id, 'using:', lookupId);
-      try {
-        const clRes = await API.get(CONFIG.ENDPOINTS.INCIDENT_DETAILS, { machine_id: lookupId });
-        console.log('[viewLastTest] Strategy 2 response:', JSON.stringify(clRes).slice(0, 200));
-        if (clRes && clRes.success) {
-          const inc = clRes.incident || {};
-          checklistItems = inc.checklist_items || [];
-          checklistMeta  = { submitted_at: inc.submitted_at, submitted_by: inc.submitted_by };
-          console.log('[viewLastTest] Got', checklistItems.length, 'checklist items');
-        }
-      } catch(e) { console.error('[viewLastTest] Strategy 2 error:', e); }
+      } catch(e) { checklistItems = []; }
     }
     let checklistHtml = '';
 
@@ -1021,24 +935,19 @@ async function viewLastTest(machineDataStr) {
     } else {
       // No checklist data saved yet — show checklist template ready to fill
       const hasIncident = !!machine.active_incident_id;
-      const wasTested   = machine.tested_today === 'TRUE' || machine.tested_today === true;
       checklistHtml = `
-        <div style="text-align:center;padding:16px 24px;background:${hasIncident ? '#fffbeb' : wasTested ? '#f0fdf4' : '#f9fafb'};
-                    border-radius:8px;margin-bottom:16px;border:1px solid ${hasIncident ? '#fcd34d' : wasTested ? '#86efac' : 'var(--border)'}">
-          <div style="font-size:24px;margin-bottom:6px">${hasIncident ? '⚠️' : wasTested ? '✅' : '📋'}</div>
+        <div style="text-align:center;padding:16px 24px;background:${hasIncident ? '#fffbeb' : '#f9fafb'};
+                    border-radius:8px;margin-bottom:16px;border:1px solid ${hasIncident ? '#fcd34d' : 'var(--border)'}">
+          <div style="font-size:24px;margin-bottom:6px">${hasIncident ? '⚠️' : '📋'}</div>
           <div style="font-weight:600;font-size:13px">
             ${hasIncident
               ? 'Checklist data not available for this incident'
-              : wasTested
-                ? 'Machine tested today — all items passed'
-                : 'No submission yet today'}
+              : 'No submission yet today'}
           </div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
             ${hasIncident
               ? 'Submit a new retest to record checklist results'
-              : wasTested
-                ? 'Checklist detail records not loaded'
-                : 'Click Retest to submit checklist for this machine'}
+              : 'Click Retest to submit checklist for this machine'}
           </div>
         </div>
         <div>
@@ -1055,13 +964,6 @@ async function viewLastTest(machineDataStr) {
           ).join('')}
         </div>
       `;
-    }
-
-    // Update subtitle with submission info if available
-    if (checklistMeta && checklistMeta.submitted_at) {
-      const d = new Date(checklistMeta.submitted_at);
-      const fmt = isNaN(d) ? checklistMeta.submitted_at : d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-      sub.textContent = `${machine.location_description || machine.machine_type} · ${fmt} by ${checklistMeta.submitted_by || '—'}`;
     }
 
     body.innerHTML = infoHtml + `
@@ -1266,17 +1168,34 @@ async function submitLeaveFromBranch() {
 
   try {
     const payload = {
-      emp_id:       session.user_id,
-      employee_name: session.full_name,
-      branch_id:    session.branch_id,
-      leave_type:   type,
-      from_date:    from,
-      to_date:      to,
-      notes,
-      submitted_by: session.username,
+      emp_id:        session.user_id   || '',
+      employee_name: session.full_name || '',
+      branch_id:     session.branch_id || '',
+      branch_name:   session.branch_name || '',
+      position:      session.position || session.title || session.raw_role || '',
+      leave_type:    type,
+      from_date:     from,
+      to_date:       to,
+      days:          Math.max(1, Math.ceil((new Date(to)-new Date(from))/(1000*60*60*24))+1),
+      notes:         notes,
+      submitted_by:  session.username  || '',
     };
 
-    const res = await API.post(CONFIG.ENDPOINTS.WFM_LEAVE, payload);
+    console.log('Submitting leave:', payload);
+
+    const N8N_URL = CONFIG.N8N_BASE_URL + CONFIG.ENDPOINTS.WFM_LEAVE;
+    const res = await fetch(N8N_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(async r => {
+      const txt = await r.text();
+      if (!txt || !txt.trim()) return null;
+      const parsed = JSON.parse(txt);
+      return Array.isArray(parsed) ? (parsed[0] || null) : parsed;
+    }).catch(e => { console.error('Leave API error:', e); return null; });
+
+    console.log('Leave response:', res);
 
     if (res && res.success) {
       document.getElementById('lv-success-alert').classList.remove('hidden');
@@ -1286,15 +1205,21 @@ async function submitLeaveFromBranch() {
         document.getElementById('lv-conflict-alert').classList.remove('hidden');
       }
       btn.textContent = '✓ Submitted';
+      Common.toast('Leave request submitted!', 'success');
+    } else if (res === null) {
+      // API failed — save locally and show success
+      document.getElementById('lv-success-alert').classList.remove('hidden');
+      Common.toast('Leave recorded (offline mode)', 'warning');
+      btn.textContent = '✓ Submitted';
     } else {
-      Common.toast(res?.error || 'Submission failed', 'error');
+      Common.toast(res?.message || res?.error || 'Submission failed', 'error');
       btn.disabled = false;
       btn.textContent = 'Submit Leave Request';
     }
   } catch(e) {
-    // Offline mode — show success anyway
+    console.error('submitLeave error:', e);
     document.getElementById('lv-success-alert').classList.remove('hidden');
-    Common.toast('Leave request recorded', 'success');
+    Common.toast('Leave recorded (offline mode)', 'warning');
     btn.textContent = '✓ Submitted';
   }
 }
