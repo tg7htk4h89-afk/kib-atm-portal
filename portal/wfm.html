@@ -1465,15 +1465,35 @@ function selectReplacement(branch, position, date, crossArea, absentEmpId) {
   const targetGroup  = _posGroup(position);
   const branchArea   = _norm(branch.area);
 
+  // ── Debug: log pool composition on first call ─────────────────────────────
+  console.log(`[Engine] Searching: pos="${position}" (group="${targetGroup}") area="${branch.area}" date=${date} crossArea=${crossArea}`);
+  console.log(`[Engine] Total employees: ${EMPLOYEES.length}, sample areas:`, [...new Set(EMPLOYEES.slice(0,5).map(e=>e.area))]);
+
   // ── 2a. Build full candidate pool ─────────────────────────────────────────
-  // Scope: same position-group, correct area, not the absent employee
+  // Rules:
+  //   - Exclude the absent employee
+  //   - Exclude employees at the same branch (can't cover own branch)
+  //   - Area filter: ONLY if e.area is non-empty AND crossArea is false
+  //     (if API returns no area field, employee is included — better to over-include)
+  //   - Position group must match
   const allCandidates = EMPLOYEES.filter(e => {
-    if (absentEmpId && e.id === absentEmpId) return false; // absent person excluded
-    if (_norm(e.branch) === _norm(branch.id)) return false; // cannot cover own branch
-    if (!crossArea && _norm(e.area) !== branchArea) return false; // area scope
-    if (_posGroup(e.position) !== targetGroup) return false; // must match role group
+    if (absentEmpId && e.id === absentEmpId) return false;
+    if (_norm(e.branch) === _norm(branch.id)) return false;
+    // Area filter — only apply if employee HAS area data and we're not cross-area
+    if (!crossArea && e.area && e.area.toString().trim() !== '' && _norm(e.area) !== branchArea) return false;
+    if (_posGroup(e.position) !== targetGroup) return false;
     return true;
   });
+
+  console.log(`[Engine] Candidates found: ${allCandidates.length} (group=${targetGroup}, area=${branchArea})`);
+  if (allCandidates.length === 0 && EMPLOYEES.length > 0) {
+    // Diagnostic: show why pool is empty
+    const posGroups = [...new Set(EMPLOYEES.map(e => _posGroup(e.position)))];
+    const areas     = [...new Set(EMPLOYEES.map(e => e.area||'(empty)'))];
+    console.warn('[Engine] Empty pool! Position groups in data:', posGroups);
+    console.warn('[Engine] Areas in data:', areas);
+    console.warn('[Engine] Target group:', targetGroup, ' Branch area:', branchArea);
+  }
 
   // ── 2b. Classify each candidate: eligible or ineligible ───────────────────
   const classified = allCandidates.map(e => {
@@ -2094,110 +2114,7 @@ function onAbsBranchChange(){
   if(startDate) startDate.onchange = ()=>{ if(empSelect.value) refreshPreview(); };
 }
 
-function showCoverPreview(branch, absentEmp, date){
-  const preview=document.getElementById('abs-cover-preview');
-  const nocover=document.getElementById('abs-no-cover');
-  const list=document.getElementById('abs-cover-list');
-  const badge=document.getElementById('abs-cover-badge');
-
-  // ── Normalizers ────────────────────────────────────────────────────────────
-  const norm = s => (s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
-
-  function posGroup(pos){
-    const p = norm(pos);
-    if(/branch|manager|bom|sr bm|^bm$|abm/.test(p)) return 'manager';
-    if(/teller/.test(p))                              return 'teller';
-    if(/relation|^rm$|sr rm|acting rm|^ro$|sr ro|acting ro/.test(p)) return 'relations';
-    if(/service|^so$/.test(p))                        return 'service';
-    if(/back|^boo$/.test(p))                          return 'backoffice';
-    return p;
-  }
-
-  const absentGroup = posGroup(absentEmp.position);
-  const branchArea  = norm(branch.area);
-
-  // ── 3-tier search: strict → same-area-any-pos → entire-network ───────────
-  // Tier 1: same role group + same area + different branch
-  let pool = EMPLOYEES.filter(e =>
-    e.id !== absentEmp.id &&
-    norm(e.branch) !== norm(branch.id) &&
-    norm(e.area) === branchArea &&
-    (e.status === 'Available' || !e.status) &&
-    posGroup(e.position) === absentGroup
-  );
-
-  let tier = 1, fallback = false;
-
-  // Tier 2: any position, same area
-  if(!pool.length){
-    pool = EMPLOYEES.filter(e =>
-      e.id !== absentEmp.id &&
-      norm(e.branch) !== norm(branch.id) &&
-      norm(e.area) === branchArea &&
-      (e.status === 'Available' || !e.status)
-    );
-    tier = 2; fallback = true;
-  }
-
-  // Tier 3: any position, any area (cross-area)
-  if(!pool.length){
-    pool = EMPLOYEES.filter(e =>
-      e.id !== absentEmp.id &&
-      norm(e.branch) !== norm(branch.id) &&
-      (e.status === 'Available' || !e.status)
-    );
-    tier = 3; fallback = true;
-  }
-
-  if(!pool.length){
-    preview.style.display='none';
-    nocover.style.display='block';
-    return;
-  }
-
-  // Rank by fairness: never covered → lowest coverCount → longest since last cover
-  const ranked = pool.map(e => {
-    const daysSince = e.lastCover
-      ? Math.round((new Date()-new Date(e.lastCover))/(1000*60*60*24))
-      : 9999;
-    return { e, score: (e.coverCount===0?10000:0) + (100-Math.min(e.coverCount,99)*10) + Math.min(daysSince,999)/10 };
-  }).sort((a,b)=>b.score-a.score).slice(0,5);
-
-  const tierLabel = {
-    1: '',
-    2: '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ No exact position match — showing all available in area</span>',
-    3: '<span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ Cross-area — no staff in same area available</span>'
-  }[tier];
-
-  badge.textContent = pool.length + ' eligible';
-  list.innerHTML = `<div style="margin-bottom:6px;font-size:11px;color:#6b7280">
-    Position: <strong>${absentEmp.position}</strong>${tierLabel}
-  </div>` + ranked.map((item,i)=>{
-    const {e} = item;
-    const br = BRANCHES.find(b=>b.id===e.branch);
-    const posMatch = posGroup(e.position)===absentGroup;
-    const tag = e.coverCount===0
-      ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px;font-weight:600">Never covered ⭐</span>'
-      : `<span style="font-size:10px;color:#6b7280">${e.coverCount} cover${e.coverCount!==1?'s':''}</span>`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i<ranked.length-1?'border-bottom:1px solid #d1fae5':''}">
-      <div>
-        <span style="font-weight:700;font-size:13px;color:#1D6FBB;margin-right:6px">#${i+1}</span>
-        <span style="font-weight:600;font-size:13px">${e.name}</span>
-        <span style="font-size:11px;color:#6b7280;margin-left:6px">${e.position}${!posMatch?' ⚠':''}  ·  ${br?.name||e.branch}</span>
-      </div>
-      ${tag}
-    </div>`;
-  }).join('');
-
-  // Auto-fill replacement name field with top pick
-  const datalist = document.getElementById('replacement-suggestions');
-  const nameInput = document.getElementById('abs-replacement-name');
-  if(datalist) datalist.innerHTML = ranked.map(item=>`<option value="${item.e.name}">`).join('');
-  if(nameInput && ranked.length && !nameInput.value) nameInput.value = ranked[0].e.name;
-
-  preview.style.display='block';
-  nocover.style.display='none';
-}
+// showCoverPreview is defined in the engine block above
 
 function toggleReplacementField(){
   const needs = document.getElementById('abs-needs-replacement').value;
