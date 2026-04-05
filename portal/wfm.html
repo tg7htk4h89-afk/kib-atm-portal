@@ -1001,7 +1001,7 @@ function loadATMSession() {
       username:    sess.user_id || sess.username || 'user',
       full_name:   sess.full_name || sess.username || 'User',
       role:        mapped.role,
-      area:        mapped.area,
+      area:        sess.area || mapped.area || null,  // FIX: read area from session
       color:       mapped.color,
       permissions: mapped.permissions,
       atm_role:    sess.role,
@@ -2018,34 +2018,62 @@ function renderLeaveRequests(){
     <td style="font-weight:700">${l.days}d</td>
     <td><span class="badge ${l.status==='Approved'?'badge-green':l.status==='Rejected'?'badge-red':l.status==='Pending'?'badge-amber':'badge-grey'}">${l.status}</span></td>
     <td>
-      ${l.status==='Pending'&&(currentUser.role==='Head of Branches'||currentUser.role==='Admin / Superuser')?
-        `<button class="btn btn-sm btn-success" onclick="approveLeave('${l.id}')">✓</button>
-         <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗</button>`:'—'}
+      ${l.status==='Pending'&&(currentUser.role==='Head of Branches'||currentUser.role==='Area Manager'||currentUser.role==='Admin / Superuser')?
+        `<button class="btn btn-sm btn-success" onclick="approveLeave('${l.id}')">✓ Approve</button>
+         <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>`:'—'}
     </td>
   </tr>`).join('');
 }
 
-function approveLeave(id){
+async function approveLeave(id){
   const lv=LEAVE_REQUESTS.find(l=>l.id===id);
   if(!lv) return;
-  // Check conflicts again before approval
+  // Conflict check before approval
   const emp=EMPLOYEES.find(e=>e.id===lv.empId);
   const conflicts=emp?detectLeaveConflict(emp,lv.from,lv.to):[];
   if(conflicts.length){toast('Cannot approve — conflict: '+conflicts[0],'error');return;}
+
+  // Optimistic UI update
   lv.status='Approved';
-  addAuditEntry('LeaveApproved',`${lv.id} — ${lv.employee} ${lv.type}`);
-  toast('Leave approved','success');
   renderLeaveRequests();
   renderCalendar();
+  addAuditEntry('LeaveApproved',`${lv.id} — ${lv.employee} ${lv.type}`);
+  toast('Leave approved','success');
+
+  // Persist to Google Sheets via n8n
+  if(CONFIG.USE_API){
+    try{
+      await WFM_API.post('approve-leave',{
+        leave_id:    lv.id,
+        action:      'Approved',
+        approved_by: currentUser.full_name || currentUser.username,
+        approved_at: new Date().toISOString().slice(0,16).replace('T',' '),
+      });
+    } catch(e){ console.warn('approve-leave API error:',e); }
+  }
 }
 
-function rejectLeave(id){
+async function rejectLeave(id){
   const lv=LEAVE_REQUESTS.find(l=>l.id===id);
   if(!lv) return;
+
+  // Optimistic UI update
   lv.status='Rejected';
+  renderLeaveRequests();
   addAuditEntry('LeaveRejected',`${lv.id} — ${lv.employee} ${lv.type}`);
   toast('Leave rejected','warning');
-  renderLeaveRequests();
+
+  // Persist to Google Sheets via n8n
+  if(CONFIG.USE_API){
+    try{
+      await WFM_API.post('approve-leave',{
+        leave_id:    lv.id,
+        action:      'Rejected',
+        approved_by: currentUser.full_name || currentUser.username,
+        approved_at: new Date().toISOString().slice(0,16).replace('T',' '),
+      });
+    } catch(e){ console.warn('reject-leave API error:',e); }
+  }
 }
 
 function switchLeaveTab(tabId,btn){
