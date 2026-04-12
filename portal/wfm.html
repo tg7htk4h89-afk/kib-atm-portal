@@ -3793,12 +3793,19 @@ async function loadRealDashboard(){
       console.log('✅ Leaves:', LEAVE_REQUESTS.length);
     }
     if(res.open_absences && res.open_absences.length > 0){
-      // Deduplicate by absence_id — keeps the latest occurrence only
-      const seen = new Set();
+      // Deduplicate: first by absence_id, then by emp_id+start_date+position
+      // This handles cases where same absence was submitted twice with different IDs
+      const seenIds  = new Set();
+      const seenCombo= new Set();
       ABSENCE_LOG = res.open_absences
         .filter(a => {
-          if(!a.absence_id || seen.has(a.absence_id)) return false;
-          seen.add(a.absence_id);
+          // Hard dedup by absence_id
+          if(!a.absence_id || seenIds.has(a.absence_id)) return false;
+          seenIds.add(a.absence_id);
+          // Soft dedup: same employee + same start date + same position = same absence
+          const comboKey = `${a.emp_id||''}|${a.start_date||''}|${(a.position||'').toLowerCase()}`;
+          if(seenCombo.has(comboKey)) return false;
+          seenCombo.add(comboKey);
           return true;
         })
         .map(a => ({
