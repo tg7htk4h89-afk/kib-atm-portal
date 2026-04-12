@@ -1133,7 +1133,7 @@ const ROLE_MAP = {
   // Branch Manager — sees own-branch leaves, gives FIRST approval (Pending → BM Approved)
   'branch_manager': {
     role:'Branch Manager', area:null, color:'#0891b2',
-    permissions:['dashboard','absence','leave','branches']
+    permissions:['absence','leave','branches']
   },
   // Area Manager — gives FINAL approval (BM Approved → Approved), reports absence
   'area_manager': {
@@ -1252,8 +1252,9 @@ function initApp(){
     loadCrossAreaRequests();
   }
 
-  // Load default page
-  navigateTo('dashboard');
+  // Load default page — Branch Manager goes straight to Report Absence
+  const defaultPage = currentUser.role === 'Branch Manager' ? 'absence' : 'dashboard';
+  navigateTo(defaultPage);
 
   // Set default dates
   const today = new Date().toISOString().slice(0,10);
@@ -1282,6 +1283,8 @@ function buildNav(){
   let html='';
   NAV_ITEMS.forEach(item=>{
     if(!currentUser.permissions.includes(item.id)) return;
+    // Branch Manager never sees dashboard nav item
+    if(item.id==='dashboard' && currentUser.role==='Branch Manager') return;
     if(item.section!==lastSection){
       html+=`<div class="nav-section">${item.section}</div>`;
       lastSection=item.section;
@@ -1295,18 +1298,32 @@ function buildNav(){
 }
 
 function populateDropdowns(){
-  // Filter branches by user area
-  const userBranches = currentUser.area
-    ? BRANCHES.filter(b=>b.area===currentUser.area)
-    : BRANCHES;
+  const isBM = currentUser.role === 'Branch Manager';
+
+  // Branch Manager sees only their own branch; AM sees their area; HoB sees all
+  const userBranches = isBM && currentUser.branch_id
+    ? BRANCHES.filter(b => b.id === currentUser.branch_id)
+    : currentUser.area
+      ? BRANCHES.filter(b => b.area === currentUser.area)
+      : BRANCHES;
 
   ['abs-branch','rep-branch','br-filter-branch','cov-branch','planner-branch','new-emp-branch'].forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
-    const hasAll=id!=='abs-branch'&&id!=='rep-branch';
+    const hasAll = id!=='abs-branch' && id!=='rep-branch';
     el.innerHTML=(hasAll?'<option value="">All Branches</option>':'<option value="">— Select Branch —</option>')+
       userBranches.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
   });
+
+  // Auto-select and lock branch for Branch Manager
+  if(isBM && currentUser.branch_id){
+    const absBranch = document.getElementById('abs-branch');
+    if(absBranch){
+      absBranch.value = currentUser.branch_id;
+      absBranch.disabled = true;  // lock — BM can only report for their branch
+      onAbsBranchChange();        // trigger employee load immediately
+    }
+  }
 
   // Populate employee dropdowns
   const userEmps = currentUser.area
