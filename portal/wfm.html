@@ -3823,67 +3823,123 @@ async function loadRealDashboard(){
 async function loadRealLeaves()   { await loadRealDashboard(); }
 async function loadRealAbsences() { /* handled by loadRealDashboard */ }
 
-// Override submitAbsence to call real API
+// Override submitAbsence — single unified function (no double-call)
 const _origSubmitAbsence = submitAbsence;
 async function submitAbsence(){
+  // ── Guard: disable button immediately to prevent double-submit ────────────
+  const btn = document.getElementById('abs-submit-btn');
+  if(btn){
+    if(btn.dataset.submitting==='1') return; // already in flight
+    btn.dataset.submitting = '1';
+    btn.disabled = true;
+    btn.textContent = '⏳ Submitting...';
+  }
+
   const branchId = document.getElementById('abs-branch').value;
   const empId    = document.getElementById('abs-employee').value;
   const absType  = document.getElementById('abs-type').value;
   const start    = document.getElementById('abs-start').value;
-  if(!branchId||!empId||!absType||!start){toast('Fill required fields','error');return;}
+
+  if(!branchId||!empId||!absType||!start){
+    toast('Fill required fields','error');
+    if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
+    return;
+  }
+
+  const emp    = EMPLOYEES.find(e=>e.id===empId);
+  const branch = BRANCHES.find(b=>b.id===branchId);
 
   if(CONFIG.USE_API){
-    const emp      = EMPLOYEES.find(e=>e.id===empId);
-    const branch   = BRANCHES.find(b=>b.id===branchId);
-    const repInfo  = getSelectedReplacementInfo();
-    const repName  = repInfo?.name || document.getElementById('abs-replacement-name')?.value?.trim()||'';
-    const isCrossArea = repInfo?.isCrossArea === true;
-    const repArea  = repInfo?.area || '';
-    const needsRad = document.querySelector('input[name="abs-needs-rep"]:checked')?.value||'yes';
-    const res = await WFM_API.post('wfm-absence', {
-      emp_id:                empId,
-      absence_type:          absType,
-      start_date:            start,
-      return_date:           document.getElementById('abs-return').value||'',
-      notes:                 document.getElementById('abs-notes').value||'',
-      reported_by:           currentUser.username||currentUser.full_name||'',
-      branch_id:             branchId,
-      branch_name:           branch?.name||'',
-      position:              emp?.position||'',
-      area:                  branch?.area||'',
-      replacement_name:      repName,
-      needs_replacement:     needsRad,
-      cross_area_replacement:isCrossArea?'yes':'no',
-      replacement_area:      repArea,
-    });
-    const absRes = Array.isArray(res) ? (res[0]||{}) : (res||{});
-    if(absRes && absRes.success){
-      const msg = absRes.conflict_warning
-        ? '⚠️ Recorded with conflict: '+absRes.conflict_warning
-        : '✅ Absence recorded — '+absRes.absence_id;
-      toast(msg, absRes.conflict_warning?'warning':'success');
-      // If cross-area replacement → send approval request to other AM
-      if(isCrossArea && repName && repArea && emp && branch){
-        await submitCrossAreaRequest(
-          absRes.absence_id||'ABS-'+Date.now(), emp, branch,
-          repName, repArea, repInfo?.empId||'', start,
-          currentUser.username||currentUser.full_name||''
-        );
-        const pendEl  = document.getElementById('abs-cross-area-pending');
-        const pendTxt = document.getElementById('abs-cross-area-pending-text');
-        if(pendEl && pendTxt){
-          pendTxt.textContent = `Waiting for the ${repArea} manager to approve ${repName} covering ${branch.name}.`;
-          pendEl.style.display = 'block';
+    try{
+      const repInfo  = getSelectedReplacementInfo();
+      const repName  = repInfo?.name || '';
+      const isCrossArea = repInfo?.isCrossArea === true;
+      const repArea  = repInfo?.area || '';
+      const needsRad = document.querySelector('input[name="abs-needs-rep"]:checked')?.value||'yes';
+
+      const res = await WFM_API.post('wfm-absence', {
+        emp_id:                empId,
+        absence_type:          absType,
+        start_date:            start,
+        return_date:           document.getElementById('abs-return').value||'',
+        notes:                 document.getElementById('abs-notes').value||'',
+        reported_by:           currentUser.username||currentUser.full_name||'',
+        branch_id:             branchId,
+        branch_name:           branch?.name||'',
+        position:              emp?.position||'',
+        area:                  branch?.area||'',
+        replacement_name:      repName||'Pending',
+        needs_replacement:     needsRad,
+        cross_area_replacement:isCrossArea?'yes':'no',
+        replacement_area:      repArea,
+      });
+
+      const absRes = Array.isArray(res) ? (res[0]||{}) : (res||{});
+
+      if(absRes && absRes.success){
+        toast(absRes.conflict_warning
+          ? '⚠️ Recorded with conflict: '+absRes.conflict_warning
+          : '✅ Absence reported — '+absRes.absence_id,
+          absRes.conflict_warning?'warning':'success');
+
+        // Also update local state (once — no _origSubmitAbsence call)
+        const absId = absRes.absence_id || 'ABS-'+Date.now();
+        if(emp){
+          ABSENCE_LOG.unshift({
+            id:absId, employee:emp.name, empId:emp.id,
+            branch:branchId, branchName:branch?.name||'',
+            position:emp.position, type:absType, start,
+            returnDate:document.getElementById('abs-return').value||'',
+            status:'Open', replacement:'Pending',
+            notes:document.getElementById('abs-notes').value||'',
+            reportedBy:currentUser.username||currentUser.full_name||'',
+          });
+          emp.status='Absent';
         }
-        toast(`⏳ Cross-area request sent to ${repArea} manager`,'warning');
+        addAuditEntry('AbsenceReported',`${emp?.name||empId} | ${branch?.name||branchId} | ${absType}`);
+
+        // Cross-area request if applicable
+        if(isCrossArea && repName && repArea && emp && branch){
+          await submitCrossAreaRequest(
+            absId, emp, branch, repName, repArea, repInfo?.empId||'', start,
+            currentUser.username||currentUser.full_name||''
+          );
+          toast(`⏳ Cross-area request sent to ${repArea} manager`,'warning');
+        }
+
+        // Show success, clear form, update table
+        const successEl = document.getElementById('abs-submit-success');
+        if(successEl) successEl.style.display='block';
+        loadAbsenceCases();
+        renderDashboard();
+        await loadRealDashboard();
+
+        // Reset button to allow another submission after success
+        if(btn){ btn.textContent='📋 Report Another Absence'; btn.disabled=false; btn.dataset.submitting=''; }
+
+        // Clear form after short delay
+        setTimeout(()=>{
+          ['abs-employee','abs-type','abs-notes','abs-return'].forEach(id=>{
+            const el=document.getElementById(id); if(el) el.value='';
+          });
+          if(successEl) successEl.style.display='none';
+          if(btn) btn.textContent='📋 Report Absence';
+        }, 3000);
+
+      } else {
+        toast(absRes?.error||'Submission failed','error');
+        if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
       }
-      await loadRealDashboard();
-    } else {
-      toast(absRes?.error||'API failed — saved locally','warning');
+    } catch(e){
+      console.error('submitAbsence error:',e);
+      toast('Network error — please try again','error');
+      if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
     }
+  } else {
+    // Offline mode — local only (call original once)
+    _origSubmitAbsence();
+    if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
   }
-  // Always run local version too
-  _origSubmitAbsence();
 }
 
 // Override runReplacementEngine to call real fairness engine
