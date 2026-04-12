@@ -3874,14 +3874,12 @@ async function loadRealAbsences() { /* handled by loadRealDashboard */ }
 // Override submitAbsence — single unified function (no double-call)
 const _origSubmitAbsence = submitAbsence;
 async function submitAbsence(){
-  // ── Guard: disable button immediately to prevent double-submit ────────────
+  // ── Atomic lock — module-level, immune to JS event-loop race conditions ─────
+  if(typeof _absSubmitting === 'undefined') window._absSubmitting = false;
+  if(window._absSubmitting) return;
+  window._absSubmitting = true;
   const btn = document.getElementById('abs-submit-btn');
-  if(btn){
-    if(btn.dataset.submitting==='1') return; // already in flight
-    btn.dataset.submitting = '1';
-    btn.disabled = true;
-    btn.textContent = '⏳ Submitting...';
-  }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Submitting...'; }
 
   const branchId = document.getElementById('abs-branch').value;
   const empId    = document.getElementById('abs-employee').value;
@@ -3890,7 +3888,8 @@ async function submitAbsence(){
 
   if(!branchId||!empId||!absType||!start){
     toast('Fill required fields','error');
-    if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
+    window._absSubmitting=false;
+    if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; }
     return;
   }
 
@@ -3953,7 +3952,8 @@ async function submitAbsence(){
         await loadRealDashboard();
 
         // Reset button to allow another submission after success
-        if(btn){ btn.textContent='📋 Report Another Absence'; btn.disabled=false; btn.dataset.submitting=''; }
+        window._absSubmitting=false;
+        if(btn){ btn.textContent='📋 Report Another Absence'; btn.disabled=false; }
 
         // Clear form after short delay
         setTimeout(()=>{
@@ -3966,12 +3966,14 @@ async function submitAbsence(){
 
       } else {
         toast(absRes?.error||'Submission failed','error');
-        if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
+        window._absSubmitting=false;
+      if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; }
       }
     } catch(e){
       console.error('submitAbsence error:',e);
       toast('Network error — please try again','error');
-      if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; btn.dataset.submitting=''; }
+      window._absSubmitting=false;
+      if(btn){ btn.disabled=false; btn.textContent='📋 Report Absence'; }
     }
   } else {
     // Offline mode — local only (call original once)
