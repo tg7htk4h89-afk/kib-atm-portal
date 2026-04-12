@@ -5,6 +5,10 @@
 let selectedImages = [];
 let selectedMachine = null;
 
+// ── Submission locks — module-level, immune to JS event-loop race conditions ──
+let _leaveSubmitting   = false;
+let _absenceSubmitting = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
   if (!Auth.requireAuth(['branch_user', 'manager', 'atm_manager', 'area_manager', 'head_branches'])) return;
   Common.bindLogout();
@@ -1274,10 +1278,11 @@ async function checkPositionConflict(from, to) {
 }
 
 async function submitLeaveFromBranch() {
-  // ── Hard guard: prevent any double-submission ─────────────────────────────
+  // ── Atomic lock — module-level variable prevents race condition ───────────
+  if (_leaveSubmitting) return;
+  _leaveSubmitting = true;
   const btn = document.getElementById('lv-submit-btn');
-  if (btn && btn.dataset.submitting === '1') return;
-  if (btn) { btn.dataset.submitting = '1'; btn.disabled = true; btn.textContent = 'Submitting...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; }
 
   const session = Auth.getSession();
   const type  = document.getElementById('lv-type').value;
@@ -1287,12 +1292,14 @@ async function submitLeaveFromBranch() {
 
   if (!from || !to) {
     Common.toast('Select both dates', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; btn.dataset.submitting = ''; }
+    _leaveSubmitting = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; }
     return;
   }
   if (new Date(to) < new Date(from)) {
     Common.toast('To date must be after From date', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; btn.dataset.submitting = ''; }
+    _leaveSubmitting = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; }
     return;
   }
 
@@ -1351,7 +1358,7 @@ async function submitLeaveFromBranch() {
       }
       btn.textContent = '✓ Submitted';
       btn.style.background = '';
-      btn.dataset.submitting = '';
+      _leaveSubmitting = false;
       Common.toast('Leave request submitted!', 'success');
     } else if (res === null) {
       document.getElementById('lv-success-alert').classList.remove('hidden');
@@ -1359,10 +1366,10 @@ async function submitLeaveFromBranch() {
       btn.textContent = '✓ Submitted';
     } else {
       Common.toast(res?.message || res?.error || 'Submission failed', 'error');
+      _leaveSubmitting = false;
       btn.disabled = false;
       btn.textContent = 'Submit Leave Request';
       btn.style.background = '';
-      btn.dataset.submitting = '';
     }
   } catch(e) {
     console.error('submitLeave error:', e);
