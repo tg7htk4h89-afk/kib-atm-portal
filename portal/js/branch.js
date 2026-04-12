@@ -1066,6 +1066,11 @@ async function loadLeaveSubmitPage() {
             <textarea class="form-control" id="lv-notes" rows="3" placeholder="Optional — add any relevant details..." style="font-size:16px"></textarea>
           </div>
 
+          <!-- HARD BLOCK: same position already on leave -->
+          <div id="lv-block-alert" class="hidden" style="padding:14px 16px;background:#fef2f2;border:2px solid #dc2626;border-radius:8px;color:#dc2626;margin-bottom:16px">
+          </div>
+
+          <!-- SOFT WARNING: server-side warnings (balance, etc.) -->
           <div id="lv-conflict-alert" class="hidden" style="padding:10px 14px;background:var(--status-amber-bg);border:1px solid var(--status-amber-bdr);border-radius:6px;font-size:12px;color:var(--status-amber);margin-bottom:16px">
             ⚠️ <span id="lv-conflict-text"></span>
           </div>
@@ -1103,6 +1108,10 @@ async function loadLeaveSubmitPage() {
 function calcLeaveDays() {
   const from = document.getElementById('lv-from')?.value;
   const to   = document.getElementById('lv-to')?.value;
+  // Re-check position conflict whenever dates change
+  if (from && to && new Date(to) >= new Date(from)) {
+    checkPositionConflict(from, to);
+  }
   if (!from || !to) return;
   const days = Math.max(0, Math.ceil((new Date(to) - new Date(from)) / (1000*60*60*24)) + 1);
   const disp = document.getElementById('lv-days-display');
@@ -1111,21 +1120,37 @@ function calcLeaveDays() {
 }
 
 async function loadMyLeaveData(session) {
-  // Show placeholder balance
   document.getElementById('lv-balance-annual').textContent = '21';
   document.getElementById('lv-pending-count').textContent = '0';
   document.getElementById('lv-taken-count').textContent = '0';
 
-  // Try to get real data from WFM API
   try {
     const res = await API.get(CONFIG.ENDPOINTS.WFM_DASHBOARD, {});
     if (res && res.success && res.pending_leaves) {
-      const myLeaves = res.pending_leaves.filter(l => l.emp_id === session.user_id || l.employee_name === session.full_name);
-      document.getElementById('lv-pending-count').textContent = myLeaves.filter(l=>l.status==='Pending').length;
+      const allLeaves = res.pending_leaves;
+
+      // Store ALL leaves (full branch) for position conflict check
+      _positionLeaves = allLeaves;
+
+      const myLeaves = allLeaves.filter(l =>
+        l.emp_id === session.user_id || l.employee_name === session.full_name
+      );
+      const approved = myLeaves.filter(l => l.status === 'Approved');
+      const pending  = myLeaves.filter(l => l.status === 'Pending' || l.status === 'BM Approved');
+      const daysTaken= approved.reduce((s,l)=>s+parseInt(l.days||1),0);
+
+      document.getElementById('lv-pending-count').textContent = pending.length;
+      document.getElementById('lv-taken-count').textContent   = daysTaken;
+
+      // Re-run conflict check with fresh data
+      const from = document.getElementById('lv-from')?.value;
+      const to   = document.getElementById('lv-to')?.value;
+      if (from && to) checkPositionConflict(from, to);
+
       renderMyLeaveHistory(myLeaves);
       return;
     }
-  } catch(e) {}
+  } catch(e) { console.error('loadMyLeaveData error:', e); }
 
   document.getElementById('my-leave-history').innerHTML =
     '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">No leave records found</div>';
@@ -1152,6 +1177,78 @@ function renderMyLeaveHistory(leaves) {
   </table>`;
 }
 
+// ── Position conflict checker — called whenever dates change ──────────────────
+// Rule: only ONE person per position per branch can be on leave at a time.
+// If a colleague with the same position at the same branch already has
+// an Approved or BM-Approved leave overlapping the requested dates,
+// the submit button is disabled and a clear block message is shown.
+let _positionLeaves = []; // populated by loadMyLeaveData
+
+async function checkPositionConflict(from, to) {
+  const session    = Auth.getSession();
+  if (!session) return;
+
+  const myPosition = (session.title || session.position || '').toString().trim();
+  const myBranch   = (session.branch_id || '').toString().trim();
+  const myEmpId    = (session.user_id || '').toString().trim();
+
+  const blockEl   = document.getElementById('lv-block-alert');
+  const submitBtn = document.getElementById('lv-submit-btn');
+  if (!blockEl || !submitBtn) return;
+
+  // If no position on session — cannot check, allow submission
+  if (!myPosition || !myBranch) {
+    blockEl.classList.add('hidden');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Leave Request';
+    return;
+  }
+
+  // Check _positionLeaves (same position, same branch, not self, approved/BM-approved)
+  const conflict = _positionLeaves.find(l => {
+    if (l.emp_id === myEmpId) return false;                   // ignore own records
+    if ((l.branch_id || l.branch) !== myBranch) return false; // different branch
+    // Normalize position comparison
+    const lPos = (l.position || '').toString().trim().toLowerCase();
+    const mPos = myPosition.toLowerCase();
+    if (lPos !== mPos) return false;
+    // Only block on Approved or BM Approved leaves
+    const s = (l.status || '').toString().trim();
+    if (!['Approved', 'BM Approved'].includes(s)) return false;
+    // Date overlap check: conflict if NOT (to < l.from_date OR from > l.to_date)
+    const lFrom = l.from_date || l.from || '';
+    const lTo   = l.to_date   || l.to   || '';
+    if (!lFrom || !lTo) return false;
+    return !(to < lFrom || from > lTo);
+  });
+
+  if (conflict) {
+    const conflictName = conflict.employee_name || conflict.employee || 'A colleague';
+    const lFrom = conflict.from_date || conflict.from;
+    const lTo   = conflict.to_date   || conflict.to;
+    blockEl.innerHTML = `
+      <div style="font-size:14px;font-weight:700;margin-bottom:6px">🚫 Leave Blocked</div>
+      <div style="font-size:13px">
+        <strong>${conflictName}</strong> (${conflict.position || myPosition}) is already on
+        <span style="font-weight:700">${conflict.status}</span> leave from
+        <strong>${lFrom}</strong> to <strong>${lTo}</strong>.
+      </div>
+      <div style="font-size:12px;margin-top:6px;opacity:.85">
+        Only one ${myPosition} per branch can be on leave at the same time.
+        Please choose different dates or contact your Branch Manager.
+      </div>`;
+    blockEl.classList.remove('hidden');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '🚫 Leave Blocked';
+    submitBtn.style.background = 'var(--status-red)';
+  } else {
+    blockEl.classList.add('hidden');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Leave Request';
+    submitBtn.style.background = '';
+  }
+}
+
 async function submitLeaveFromBranch() {
   const session = Auth.getSession();
   const type  = document.getElementById('lv-type').value;
@@ -1172,7 +1269,7 @@ async function submitLeaveFromBranch() {
       employee_name: session.full_name || '',
       branch_id:     session.branch_id || '',
       branch_name:   session.branch_name || '',
-      position:      session.position || session.title || session.raw_role || '',
+      position:      session.title || '',
       leave_type:    type,
       from_date:     from,
       to_date:       to,
@@ -1197,17 +1294,32 @@ async function submitLeaveFromBranch() {
 
     console.log('Leave response:', res);
 
-    if (res && res.success) {
+    if (res && res.blocked) {
+      // Server confirmed hard block — show block UI
+      const blockEl = document.getElementById('lv-block-alert');
+      if (blockEl) {
+        const c = res.conflict || {};
+        blockEl.innerHTML = `
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px">🚫 Leave Blocked by Server</div>
+          <div style="font-size:13px">${res.error || 'Same position already on leave during this period.'}</div>`;
+        blockEl.classList.remove('hidden');
+      }
+      Common.toast('🚫 Leave blocked — ' + (res.error || 'Same position conflict'), 'error');
+      btn.disabled = true;
+      btn.textContent = '🚫 Leave Blocked';
+      btn.style.background = 'var(--status-red)';
+    } else if (res && res.success) {
       document.getElementById('lv-success-alert').classList.remove('hidden');
       document.getElementById('lv-conflict-alert').classList.add('hidden');
+      document.getElementById('lv-block-alert').classList.add('hidden');
       if (res.warnings && res.warnings.length) {
         document.getElementById('lv-conflict-text').textContent = res.warnings.join(' | ');
         document.getElementById('lv-conflict-alert').classList.remove('hidden');
       }
       btn.textContent = '✓ Submitted';
+      btn.style.background = '';
       Common.toast('Leave request submitted!', 'success');
     } else if (res === null) {
-      // API failed — save locally and show success
       document.getElementById('lv-success-alert').classList.remove('hidden');
       Common.toast('Leave recorded (offline mode)', 'warning');
       btn.textContent = '✓ Submitted';
@@ -1215,6 +1327,7 @@ async function submitLeaveFromBranch() {
       Common.toast(res?.message || res?.error || 'Submission failed', 'error');
       btn.disabled = false;
       btn.textContent = 'Submit Leave Request';
+      btn.style.background = '';
     }
   } catch(e) {
     console.error('submitLeave error:', e);
