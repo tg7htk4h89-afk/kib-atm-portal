@@ -391,145 +391,166 @@ textarea.form-control{resize:vertical;min-height:80px}
 
         <!-- PAGE: ABSENCE REPORTING -->
         <div class="page" id="page-absence">
-          <div class="card" style="max-width:760px;margin-bottom:20px">
-            <div class="card-header">
-              <div><div class="card-title">📋 Report Absence</div><div class="card-subtitle">Record a staff absence and trigger replacement recommendation</div></div>
-            </div>
-            <div class="card-body">
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label required">Branch</label>
-                  <select class="form-control" id="abs-branch" onchange="onAbsBranchChange()">
-                    <option value="">— Select Branch —</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label required">Absent Employee</label>
-                  <select class="form-control" id="abs-employee">
-                    <option value="">— Select Employee —</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label required">Position</label>
-                  <input class="form-control" id="abs-position" readonly placeholder="Auto-filled from employee">
-                </div>
-                <div class="form-group">
-                  <label class="form-label required">Absence Type</label>
-                  <select class="form-control" id="abs-type">
-                    <option value="">— Select Type —</option>
-                    <option value="Medical">Medical</option>
-                    <option value="Emergency">Emergency</option>
-                    <option value="Unauthorized">Unauthorized</option>
-                    <option value="Official Leave">Official Leave</option>
-                    <option value="No Show">No Show</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label required">Start Date</label>
-                  <input type="date" class="form-control" id="abs-start">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Expected Return Date</label>
-                  <input type="date" class="form-control" id="abs-return">
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Notes / Reason</label>
-                <textarea class="form-control" id="abs-notes" placeholder="Additional context..."></textarea>
-              </div>
-              <!-- Requires replacement + position picker -->
-              <div class="form-group">
-                <label class="form-label">Requires Replacement?</label>
-                <div style="display:flex;gap:12px">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                    <input type="radio" name="abs-needs-rep" id="abs-needs-yes" value="yes" checked onchange="onNeedsRepChange()"> Yes
-                  </label>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                    <input type="radio" name="abs-needs-rep" id="abs-needs-no" value="no" onchange="onNeedsRepChange()"> No — Record Only
-                  </label>
-                </div>
-              </div>
 
-              <!-- Cover position picker — shown after employee selected -->
-              <div id="abs-cover-positions" style="display:none;margin-bottom:12px;padding:14px 16px;background:#f8fafc;border:1px solid var(--border);border-radius:8px">
-                <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
-                  Which positions can cover?
-                </div>
-                <div id="abs-pos-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px">
-                  <!-- populated by JS after employee selected -->
-                </div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
-                  ✅ Exact match (same position) is always included. Check additional compatible positions below.
+          <!-- ── SECTION 1: Report Form (Branch Manager only — simple) ─────── -->
+          <div id="abs-report-section" style="max-width:700px;margin-bottom:20px">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">📋 Report Absence</div>
+                  <div class="card-subtitle" id="abs-form-subtitle">Record a staff absence — the Area Manager will handle coverage</div>
                 </div>
               </div>
-
-              <!-- Live Replacement Preview -->
-              <div id="abs-cover-preview" style="display:none;margin-bottom:12px;padding:14px 16px;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                  <div style="font-weight:700;color:#16a34a;font-size:13px">🤖 Recommended Cover Staff</div>
-                  <span id="abs-cover-badge" class="badge badge-green" style="font-size:11px"></span>
-                </div>
-                <div id="abs-cover-list"></div>
-              </div>
-              <div id="abs-no-cover" style="display:none;margin-bottom:12px;padding:12px 16px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;font-size:13px;color:#dc2626">
-                ⚠️ No eligible cover staff found for this position in your area.
-              </div>
-
-              <!-- Replacement name dropdown (populated by preview engine) -->
-              <div class="form-group" id="replacement-name-group">
-                <label class="form-label">Replacement Staff
-                  <span id="abs-rep-badge" style="display:none;font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 8px;border-radius:999px;margin-left:6px;font-weight:600"></span>
-                </label>
-                <select class="form-control" id="abs-replacement-name" style="font-weight:600">
-                  <option value="">— Select from recommended list —</option>
-                </select>
-              </div>
-
-              <!-- Cross-area coverage toggle -->
-              <div id="abs-cross-area-section" style="display:none;margin-bottom:12px;padding:12px 16px;background:#fffbeb;border:1.5px solid #d97706;border-radius:8px">
-                <div style="display:flex;align-items:center;justify-content:space-between">
-                  <div>
-                    <div style="font-size:13px;font-weight:700;color:#d97706">🌐 Include Other Area Staff?</div>
-                    <div style="font-size:11px;color:#92400e;margin-top:2px">Cross-area cover requires approval from the other area's manager</div>
+              <div class="card-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label required">Branch</label>
+                    <select class="form-control" id="abs-branch" onchange="onAbsBranchChange()">
+                      <option value="">— Select Branch —</option>
+                    </select>
                   </div>
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                    <input type="checkbox" id="abs-cross-area-toggle" onchange="onCrossAreaToggle()" style="width:16px;height:16px;accent-color:#d97706">
-                    <span style="font-size:13px;font-weight:600;color:#d97706">Search other area</span>
-                  </label>
+                  <div class="form-group">
+                    <label class="form-label required">Absent Employee</label>
+                    <select class="form-control" id="abs-employee">
+                      <option value="">— Select Employee —</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Position</label>
+                    <input class="form-control" id="abs-position" readonly placeholder="Auto-filled">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label required">Absence Type</label>
+                    <select class="form-control" id="abs-type">
+                      <option value="">— Select Type —</option>
+                      <option value="Medical">Medical</option>
+                      <option value="Emergency">Emergency</option>
+                      <option value="Unauthorized">Unauthorized</option>
+                      <option value="Official Leave">Official Leave</option>
+                      <option value="No Show">No Show</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label required">Start Date</label>
+                    <input type="date" class="form-control" id="abs-start">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Expected Return Date</label>
+                    <input type="date" class="form-control" id="abs-return">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Notes / Reason</label>
+                  <textarea class="form-control" id="abs-notes" placeholder="Optional context for the area manager..."></textarea>
+                </div>
+                <!-- Hidden fields — kept for API compatibility -->
+                <div style="display:none">
+                  <input type="radio" name="abs-needs-rep" id="abs-needs-yes" value="yes" checked>
+                  <div id="abs-cover-positions"><div id="abs-pos-checkboxes"></div></div>
+                  <div id="abs-cover-preview"><span id="abs-cover-badge"></span><div id="abs-cover-list"></div></div>
+                  <div id="abs-no-cover"></div>
+                  <div id="replacement-name-group"><select id="abs-replacement-name"><option value=""></option></select><span id="abs-rep-badge"></span></div>
+                  <div id="abs-cross-area-section"><input type="checkbox" id="abs-cross-area-toggle"></div>
+                  <div id="abs-cross-area-pending"><div id="abs-cross-area-pending-text"></div></div>
+                </div>
+                <div id="abs-submit-success" style="display:none;padding:12px 16px;background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;font-size:13px;color:#15803d;margin-bottom:12px">
+                  ✅ Absence reported. The Area Manager has been notified and will arrange coverage.
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end">
+                  <button class="btn btn-secondary" onclick="clearAbsForm()">Clear</button>
+                  <button class="btn btn-primary" id="abs-submit-btn" onclick="submitAbsence()">📋 Report Absence</button>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <!-- Cross-area pending approval banner (shown after submit) -->
-              <div id="abs-cross-area-pending" style="display:none;margin-bottom:12px;padding:14px 16px;background:#fef3c7;border:2px solid #d97706;border-radius:8px">
-                <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:4px">⏳ Awaiting Cross-Area Approval</div>
-                <div id="abs-cross-area-pending-text" style="font-size:12px;color:#78350f"></div>
+          <!-- ── SECTION 2: Open Absences + Coverage Actions (AM/HoB only) ── -->
+          <div id="abs-action-section" style="max-width:1100px">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">🚨 Open Absence Cases</div>
+                  <div class="card-subtitle" id="abs-cases-subtitle">Absences requiring your coverage decision</div>
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="loadAbsenceCases()">🔄 Refresh</button>
               </div>
+              <div class="card-body-tight">
+                <div class="table-wrap">
+                  <table class="data-table">
+                    <thead><tr>
+                      <th>Employee</th><th>Branch</th><th>Position</th>
+                      <th>Type</th><th>Start</th><th>Status</th>
+                      <th>Replacement</th><th id="abs-action-col-header">Actions</th>
+                    </tr></thead>
+                    <tbody id="absence-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
 
-              <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
-                <button class="btn btn-secondary" onclick="clearAbsForm()">Clear</button>
-                <button class="btn btn-primary" id="abs-submit-btn" onclick="submitAbsence()">Submit & Confirm Cover</button>
+            <!-- Inline coverage action panel — expands per absence row -->
+            <div id="abs-inline-cover-panel" style="display:none;margin-top:12px">
+              <div class="card" style="border:2px solid #1D6FBB">
+                <div class="card-header" style="background:#eff6ff">
+                  <div>
+                    <div class="card-title" style="color:#1D6FBB">🤖 Coverage Action</div>
+                    <div class="card-subtitle" id="abs-panel-subtitle">Select coverage for the absent employee</div>
+                  </div>
+                  <button class="btn btn-sm btn-secondary" onclick="closeInlineCoverPanel()">✕ Close</button>
+                </div>
+                <div class="card-body">
+
+                  <!-- Position compatibility checkboxes -->
+                  <div id="abs-panel-compat" style="display:none;margin-bottom:12px;padding:12px 16px;background:#f8fafc;border:1px solid var(--border);border-radius:8px">
+                    <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Also search these compatible positions:</div>
+                    <div id="abs-panel-pos-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+                  </div>
+
+                  <!-- Cross-area toggle -->
+                  <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                      <input type="checkbox" id="abs-panel-cross-area" onchange="runInlineCoverSearch()" style="accent-color:#d97706">
+                      <span style="font-weight:600;color:#d97706">🌐 Include other area staff</span>
+                      <span style="font-size:11px;color:var(--text-muted)">(requires approval)</span>
+                    </label>
+                    <button class="btn btn-primary btn-sm" onclick="runInlineCoverSearch()">🔍 Find Cover Staff</button>
+                  </div>
+
+                  <!-- Results -->
+                  <div id="abs-panel-results" style="display:none">
+                    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ranked Candidates</div>
+                    <div id="abs-panel-candidate-list"></div>
+                    <div class="form-row" style="margin-top:12px">
+                      <div class="form-group">
+                        <label class="form-label">Confirm Replacement</label>
+                        <select class="form-control" id="abs-panel-replacement" style="font-weight:600">
+                          <option value="">— Select staff member —</option>
+                        </select>
+                      </div>
+                      <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;padding-bottom:0">
+                        <button class="btn btn-success" onclick="confirmInlineCover()" style="flex:1">✅ Confirm Cover</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- No cover option -->
+                  <div style="margin-top:12px;padding:12px 16px;background:#f9fafb;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+                    <div>
+                      <div style="font-size:13px;font-weight:700">No Cover Required</div>
+                      <div style="font-size:11px;color:var(--text-muted)">Mark this absence as not needing a replacement</div>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="markNoCoverNeeded()">✓ No Cover Needed</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
           <div id="replacement-result" class="hidden"></div>
-          <div class="card" style="max-width:760px">
-            <div class="card-header">
-              <div class="card-title">📊 Open Absence Cases</div>
-              <button class="btn btn-sm btn-secondary" onclick="loadAbsenceCases()">Refresh</button>
-            </div>
-            <div class="card-body-tight">
-              <div class="table-wrap">
-                <table class="data-table">
-                  <thead><tr><th>Employee</th><th>Branch</th><th>Position</th><th>Type</th><th>Start</th><th>Status</th><th>Replacement</th><th></th></tr></thead>
-                  <tbody id="absence-table-body"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- PAGE: LEAVE MANAGEMENT -->
@@ -1246,6 +1267,8 @@ function initApp(){
   renderLeaveRequests();
   loadAbsenceCases();
   renderCoverageHistory();
+  // Role-based absence UI (hides/shows report form vs action panel)
+  setTimeout(()=>loadAbsenceCases(), 100);
   renderEmployeeTable();
   renderBranchStatus();
   renderQueueState();
@@ -2663,33 +2686,37 @@ function toggleReplacementField(){
 }
 
 function submitAbsence(){
-  const branchId=document.getElementById('abs-branch').value;
-  const empId=document.getElementById('abs-employee').value;
-  const absType=document.getElementById('abs-type').value;
-  const start=document.getElementById('abs-start').value;
+  const branchId = document.getElementById('abs-branch').value;
+  const empId    = document.getElementById('abs-employee').value;
+  const absType  = document.getElementById('abs-type').value;
+  const start    = document.getElementById('abs-start').value;
   if(!branchId||!empId||!absType||!start){toast('Fill required fields','error');return;}
 
-  const emp=EMPLOYEES.find(e=>e.id===empId);
-  const branch=BRANCHES.find(b=>b.id===branchId);
-  const needsRep=document.getElementById('abs-needs-replacement').value==='yes';
+  const emp    = EMPLOYEES.find(e=>e.id===empId);
+  const branch = BRANCHES.find(b=>b.id===branchId);
+  if(!emp||!branch){toast('Employee or branch not found','error');return;}
 
-  const absId='ABS-'+String(ABSENCE_LOG.length+1).padStart(3,'0');
+  const absId = 'ABS-'+String(ABSENCE_LOG.length+1).padStart(3,'0');
   ABSENCE_LOG.unshift({
-    id:absId,employee:emp.name,empId:emp.id,branch:branchId,branchName:branch.name,
-    position:emp.position,type:absType,start,returnDate:document.getElementById('abs-return').value,
-    status:'Open',replacement:needsRep?'Pending':'N/A',notes:document.getElementById('abs-notes').value
+    id: absId, employee: emp.name, empId: emp.id,
+    branch: branchId, branchName: branch.name,
+    position: emp.position, type: absType, start,
+    returnDate: document.getElementById('abs-return').value||'',
+    status: 'Open', replacement: 'Pending',
+    notes: document.getElementById('abs-notes').value||'',
+    reportedBy: currentUser.username||currentUser.full_name||'',
   });
 
-  emp.status='Absent';
-  addAuditEntry('AbsenceReported',`${emp.name} | ${branch.name} | ${absType}`);
-  toast('Absence recorded','success');
-  loadAbsenceCases();
+  emp.status = 'Absent';
+  addAuditEntry('AbsenceReported',`${emp.name} | ${branch.name} | ${absType} | Reported by: ${currentUser.role}`);
+  toast('✅ Absence recorded — Area Manager notified','success');
 
-  if(needsRep){
-    const results=rankReplacementCandidates(branch,emp.position,start,false);
-    document.getElementById('replacement-result').classList.remove('hidden');
-    renderReplacementResultInline(branch,emp.position,start,results);
-  }
+  // Show success message in form
+  const successEl = document.getElementById('abs-submit-success');
+  if(successEl) successEl.style.display='block';
+
+  loadAbsenceCases();
+  renderDashboard();
 }
 
 function renderReplacementResultInline(branch,position,date,results){
@@ -2714,19 +2741,274 @@ function renderReplacementResultInline(branch,position,date,results){
 }
 
 function loadAbsenceCases(){
-  const tbody=document.getElementById('absence-table-body');
+  // Adjust UI based on role
+  const isBM  = currentUser.role === 'Branch Manager';
+  const isAM  = currentUser.role === 'Area Manager';
+  const isHoB = currentUser.role === 'Head of Branches';
+
+  // Branch Manager: show report form, hide action column header
+  const reportSection = document.getElementById('abs-report-section');
+  const actionSection = document.getElementById('abs-action-section');
+  const subtitle      = document.getElementById('abs-form-subtitle');
+  const colHeader     = document.getElementById('abs-action-col-header');
+  const panelSubtitle = document.getElementById('abs-cases-subtitle');
+
+  if(isBM){
+    if(reportSection) reportSection.style.display='';
+    if(actionSection) actionSection.style.maxWidth='700px';
+    if(colHeader)     colHeader.textContent='';
+    if(panelSubtitle) panelSubtitle.textContent='Absences you have reported';
+    if(subtitle)      subtitle.textContent='Record the absence — the Area Manager will handle coverage';
+  } else {
+    // AM / HoB: hide report form unless they also need to report
+    if(reportSection) reportSection.style.display='none'; // AM sees form only if they want
+    if(actionSection) actionSection.style.maxWidth='1100px';
+    if(colHeader)     colHeader.textContent='Coverage Action';
+    if(panelSubtitle) panelSubtitle.textContent='Absences in your area requiring coverage decisions';
+    // AM can still report if needed via a toggle
+    const showFormBtn = document.getElementById('abs-show-form-btn');
+    if(!showFormBtn && reportSection){
+      const btn = document.createElement('button');
+      btn.id='abs-show-form-btn';
+      btn.className='btn btn-secondary btn-sm';
+      btn.style.marginBottom='12px';
+      btn.textContent='+ Report New Absence';
+      btn.onclick=()=>{ reportSection.style.display = reportSection.style.display==='none'?'':'none'; };
+      actionSection.parentNode.insertBefore(btn, actionSection);
+    }
+  }
+
+  const tbody = document.getElementById('absence-table-body');
   if(!tbody) return;
-  const filtered=currentUser.area?ABSENCE_LOG.filter(a=>BRANCHES.find(b=>b.id===a.branch&&b.area===currentUser.area)):ABSENCE_LOG;
-  tbody.innerHTML=filtered.map(a=>`<tr>
-    <td><div style="font-weight:600;font-size:13px">${a.employee}</div><div style="font-size:10px;color:var(--text-muted)">${a.position}</div></td>
-    <td style="font-size:12px">${a.branchName}</td>
-    <td style="font-size:12px">${a.position}</td>
-    <td><span class="badge ${a.type==='Medical'?'badge-blue':a.type==='Emergency'?'badge-red':'badge-amber'}">${a.type}</span></td>
-    <td class="mono" style="font-size:11px">${a.start}</td>
-    <td><span class="badge ${a.status==='Open'?'badge-red':'badge-green'}">${a.status}</span></td>
-    <td style="font-size:12px;color:${a.replacement==='Pending'?'var(--red)':a.replacement==='N/A'?'var(--text-muted)':'var(--green)'}">${a.replacement}</td>
-    <td><button class="btn btn-sm btn-ghost" onclick="closeAbsence('${a.id}')">Close</button></td>
-  </tr>`).join('');
+
+  // Filter by area
+  let filtered = ABSENCE_LOG;
+  if(currentUser.area)
+    filtered = filtered.filter(a => BRANCHES.find(b=>b.id===a.branch&&b.area===currentUser.area));
+  // BM sees only their branch
+  if(isBM && currentUser.branch_id)
+    filtered = filtered.filter(a => a.branch === currentUser.branch_id);
+
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No open absences ✓</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(a => {
+    const typeBadge = a.type==='Medical'?'badge-blue':a.type==='Emergency'?'badge-red':'badge-amber';
+    const stBadge   = a.status==='Open'?'badge-red':a.status==='Covered'?'badge-green':a.status==='No Cover Needed'?'badge-grey':'badge-amber';
+    const repColor  = a.replacement==='Pending'?'var(--red)':a.replacement==='N/A'||a.replacement==='No Cover Needed'?'var(--text-muted)':'var(--green)';
+
+    // Action buttons: only AM and HoB, only for Open cases
+    let actionBtn = '—';
+    if((isAM || isHoB) && a.status === 'Open'){
+      actionBtn = `
+        <button class="btn btn-sm btn-primary" onclick="openInlineCoverPanel('${a.id}')" style="white-space:nowrap">
+          🤖 Find Cover
+        </button>`;
+    } else if((isAM || isHoB) && a.status === 'Covered'){
+      actionBtn = `<span style="font-size:11px;color:var(--green);font-weight:600">✓ Covered</span>`;
+    } else if((isAM || isHoB) && a.status === 'No Cover Needed'){
+      actionBtn = `<span style="font-size:11px;color:var(--text-muted)">No cover needed</span>`;
+    }
+
+    return `<tr id="abs-row-${a.id}">
+      <td>
+        <div style="font-weight:600;font-size:13px">${a.employee}</div>
+        <div style="font-size:10px;color:var(--text-muted)">${a.position}</div>
+      </td>
+      <td style="font-size:12px">${a.branchName||a.branch}</td>
+      <td style="font-size:12px">${a.position}</td>
+      <td><span class="badge ${typeBadge}">${a.type}</span></td>
+      <td class="mono" style="font-size:11px">${a.start}</td>
+      <td><span class="badge ${stBadge}">${a.status}</span></td>
+      <td style="font-size:12px;color:${repColor}">${a.replacement}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Inline cover panel ────────────────────────────────────────────────────────
+let _inlinePanelAbsenceId = null;
+
+function openInlineCoverPanel(absenceId){
+  _inlinePanelAbsenceId = absenceId;
+  const abs    = ABSENCE_LOG.find(a=>a.id===absenceId);
+  const branch = BRANCHES.find(b=>b.id===abs?.branch);
+  const panel  = document.getElementById('abs-inline-cover-panel');
+  const sub    = document.getElementById('abs-panel-subtitle');
+  const results= document.getElementById('abs-panel-results');
+  const cbBox  = document.getElementById('abs-panel-pos-checkboxes');
+  const compat = document.getElementById('abs-panel-compat');
+  if(!abs||!branch||!panel) return;
+
+  if(sub) sub.textContent=`${abs.employee} — ${abs.position} at ${branch.name} (from ${abs.start})`;
+  if(results) results.style.display='none';
+
+  // Build compatible position checkboxes
+  const compatGroups = _compatibleGroups(_posGroup(abs.position));
+  if(cbBox && compatGroups.length){
+    buildCompatCheckboxes('abs-panel-pos-checkboxes', abs.position, []);
+    cbBox.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{ if(_inlinePanelAbsenceId) runInlineCoverSearch(); });
+    });
+    if(compat) compat.style.display='block';
+  } else {
+    if(compat) compat.style.display='none';
+  }
+
+  // Reset cross-area toggle
+  const caToggle = document.getElementById('abs-panel-cross-area');
+  if(caToggle) caToggle.checked=false;
+
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  // Auto-run search immediately
+  runInlineCoverSearch();
+}
+
+function closeInlineCoverPanel(){
+  const panel=document.getElementById('abs-inline-cover-panel');
+  if(panel) panel.style.display='none';
+  _inlinePanelAbsenceId=null;
+}
+
+function runInlineCoverSearch(){
+  const abs    = ABSENCE_LOG.find(a=>a.id===_inlinePanelAbsenceId);
+  const branch = BRANCHES.find(b=>b.id===abs?.branch);
+  if(!abs||!branch) return;
+
+  const crossArea    = document.getElementById('abs-panel-cross-area')?.checked||false;
+  const checkedGroups= getCheckedGroups('abs-panel-pos-checkboxes');
+  const absentEmp    = { id:abs.empId, name:abs.employee, position:abs.position, area:branch.area, branch:branch.id };
+
+  // Run replacement engine
+  let result = selectReplacement(branch, abs.position, abs.start, false, abs.empId, false);
+  if(!result.hasResult && checkedGroups.length)
+    result = selectReplacementByGroups(branch, abs.position, abs.start, false, abs.empId, checkedGroups);
+  if(!result.hasResult && crossArea)
+    result = selectReplacement(branch, abs.position, abs.start, true, abs.empId, false);
+  if(!result.hasResult && crossArea && checkedGroups.length)
+    result = selectReplacementByGroups(branch, abs.position, abs.start, true, abs.empId, checkedGroups);
+
+  const resultsEl = document.getElementById('abs-panel-results');
+  const listEl    = document.getElementById('abs-panel-candidate-list');
+  const repSel    = document.getElementById('abs-panel-replacement');
+
+  if(!result.hasResult){
+    if(listEl) listEl.innerHTML=`<div style="padding:12px;background:#fef2f2;border:1px solid #dc2626;border-radius:8px;font-size:13px;color:#dc2626">
+      ⚠️ No eligible cover staff found. Try enabling "Include other area staff" above.
+    </div>`;
+    if(repSel) repSel.innerHTML='<option value="">— No candidates found —</option>';
+    if(resultsEl) resultsEl.style.display='block';
+    return;
+  }
+
+  // Render ranked list
+  if(listEl){
+    listEl.innerHTML=result.ranked.slice(0,5).map((r,i)=>{
+      const br      = BRANCHES.find(b=>b.id===r.employee.branch);
+      const isCross = r.employee.area && branch.area && r.employee.area !== branch.area;
+      const coverTag= r.neverCovered
+        ? '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:999px;font-weight:600">⭐ Never covered</span>'
+        : `<span style="font-size:10px;color:#6b7280">${r.coverCount} cover${r.coverCount!==1?'s':''}</span>`;
+      const crossTag= isCross
+        ? `<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:999px;margin-left:4px">🌐 ${r.employee.area}</span>`
+        : '';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i<4?'border-bottom:1px solid #e5e7eb':''}">
+        <div>
+          <span style="font-weight:700;font-size:13px;color:#1D6FBB;margin-right:6px">#${i+1}</span>
+          <span style="font-weight:600;font-size:13px">${r.employee.name}</span>
+          <span style="font-size:11px;color:#6b7280;margin-left:6px">${r.employee.position} · ${br?.name||r.employee.branch}</span>
+          ${crossTag}
+        </div>
+        ${coverTag}
+      </div>`;
+    }).join('');
+  }
+
+  // Populate dropdown with data attributes
+  if(repSel){
+    repSel.innerHTML='<option value="">— Select staff member —</option>'+
+      result.ranked.slice(0,5).map((r,i)=>{
+        const br     = BRANCHES.find(b=>b.id===r.employee.branch);
+        const isCross= r.employee.area && branch.area && r.employee.area!==branch.area;
+        const stars  = r.neverCovered?'⭐ ':`(${r.coverCount} covers) `;
+        const cLbl   = isCross?` 🌐 ${r.employee.area}`:'';
+        return `<option value="${r.employee.name}" data-area="${r.employee.area||''}" data-emp-id="${r.employee.id}" data-cross-area="${isCross}">
+          #${i+1} ${r.employee.name} — ${stars}${r.employee.position} · ${br?.name||r.employee.branch}${cLbl}
+        </option>`;
+      }).join('');
+    if(result.ranked.length) repSel.value=result.ranked[0].employee.name;
+  }
+  if(resultsEl) resultsEl.style.display='block';
+}
+
+async function confirmInlineCover(){
+  const abs    = ABSENCE_LOG.find(a=>a.id===_inlinePanelAbsenceId);
+  const branch = BRANCHES.find(b=>b.id===abs?.branch);
+  if(!abs||!branch) return;
+
+  const repSel  = document.getElementById('abs-panel-replacement');
+  const opt     = repSel?.options[repSel?.selectedIndex];
+  const repName = repSel?.value?.trim()||'';
+  if(!repName){ toast('Select a replacement first','error'); return; }
+
+  const isCrossArea = opt?.dataset?.crossArea==='true';
+  const repArea     = opt?.dataset?.area||'';
+  const repEmpId    = opt?.dataset?.empId||'';
+  const absentEmp   = {id:abs.empId, name:abs.employee, position:abs.position};
+
+  // Update local state
+  abs.replacement = repName;
+  abs.status      = 'Covered';
+
+  const repEmp = EMPLOYEES.find(e=>e.id===repEmpId);
+  if(repEmp){ repEmp.coverCount=(repEmp.coverCount||0)+1; repEmp.lastCover=abs.start; }
+
+  addAuditEntry('CoverAssigned',`${repName} → covers ${abs.employee} at ${branch.name} (${abs.position}) on ${abs.start}`);
+  toast(`✅ ${repName} confirmed as cover for ${abs.employee}`,'success');
+  closeInlineCoverPanel();
+  loadAbsenceCases();
+  renderDashboard();
+
+  // Cross-area? create approval request
+  if(isCrossArea && repArea){
+    await submitCrossAreaRequest(abs.id, absentEmp, branch, repName, repArea, repEmpId, abs.start, currentUser.username||currentUser.full_name||'');
+    toast(`⏳ Cross-area approval request sent to ${repArea} manager`,'warning');
+  }
+
+  // Persist to Sheets via WFM4
+  if(CONFIG.USE_API){
+    try{
+      await WFM_API.post('wfm-coverage',{
+        covered_emp_id:     abs.empId,    covered_name: abs.employee,
+        replacement_emp_id: repEmpId,     replacement_name: repName,
+        branch_id:          branch.id,    branch_name: branch.name,
+        position:           abs.position, date: abs.start,
+        absence_id:         abs.id,       assigned_by: currentUser.username||currentUser.full_name||'',
+        note: isCrossArea?'Cross-area cover':'Same-area cover',
+      });
+    } catch(e){ console.warn('coverage save error:',e); }
+  }
+}
+
+async function markNoCoverNeeded(){
+  const abs = ABSENCE_LOG.find(a=>a.id===_inlinePanelAbsenceId);
+  if(!abs) return;
+  abs.replacement = 'No Cover Needed';
+  abs.status      = 'No Cover Needed';
+  addAuditEntry('NoCoverNeeded',`${abs.employee} at ${abs.branchName} — AM marked no replacement required`);
+  toast('Marked: no cover needed','success');
+  closeInlineCoverPanel();
+  loadAbsenceCases();
+  renderDashboard();
+  // Persist status to Sheets via WFM3 update if needed
+  if(CONFIG.USE_API){
+    try{ await WFM_API.post('wfm-absence-update',{absence_id:abs.id,status:'No Cover Needed',updated_by:currentUser.username||''}); }
+    catch(e){ console.warn(e); }
+  }
 }
 
 function closeAbsence(id){
