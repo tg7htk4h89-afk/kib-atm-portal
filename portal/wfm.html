@@ -441,33 +441,52 @@ textarea.form-control{resize:vertical;min-height:80px}
                 <label class="form-label">Notes / Reason</label>
                 <textarea class="form-control" id="abs-notes" placeholder="Additional context..."></textarea>
               </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">Requires Replacement?</label>
-                  <select class="form-control" id="abs-needs-replacement" onchange="toggleReplacementField()">
-                    <option value="yes">Yes — Find Replacement</option>
-                    <option value="no">No — Record Only</option>
-                  </select>
-                </div>
-                <div class="form-group" id="replacement-name-group">
-                  <label class="form-label">Replacement Staff
-                    <span id="abs-rep-badge" style="display:none;font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 8px;border-radius:999px;margin-left:6px;font-weight:600"></span>
+              <!-- Requires replacement + position picker -->
+              <div class="form-group">
+                <label class="form-label">Requires Replacement?</label>
+                <div style="display:flex;gap:12px">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="radio" name="abs-needs-rep" id="abs-needs-yes" value="yes" checked onchange="onNeedsRepChange()"> Yes
                   </label>
-                  <select class="form-control" id="abs-replacement-name" style="font-weight:600">
-                    <option value="">— Select from recommended list —</option>
-                  </select>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="radio" name="abs-needs-rep" id="abs-needs-no" value="no" onchange="onNeedsRepChange()"> No — Record Only
+                  </label>
                 </div>
               </div>
-              <!-- Live Replacement Preview (shows before submit) -->
-              <div id="abs-cover-preview" style="display:none;margin-top:4px;padding:14px 16px;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px">
+
+              <!-- Cover position picker — shown after employee selected -->
+              <div id="abs-cover-positions" style="display:none;margin-bottom:12px;padding:14px 16px;background:#f8fafc;border:1px solid var(--border);border-radius:8px">
+                <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+                  Which positions can cover?
+                </div>
+                <div id="abs-pos-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px">
+                  <!-- populated by JS after employee selected -->
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+                  ✅ Exact match (same position) is always included. Check additional compatible positions below.
+                </div>
+              </div>
+
+              <!-- Live Replacement Preview -->
+              <div id="abs-cover-preview" style="display:none;margin-bottom:12px;padding:14px 16px;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                   <div style="font-weight:700;color:#16a34a;font-size:13px">🤖 Recommended Cover Staff</div>
                   <span id="abs-cover-badge" class="badge badge-green" style="font-size:11px"></span>
                 </div>
                 <div id="abs-cover-list"></div>
               </div>
-              <div id="abs-no-cover" style="display:none;margin-top:4px;padding:12px 16px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;font-size:13px;color:#dc2626">
+              <div id="abs-no-cover" style="display:none;margin-bottom:12px;padding:12px 16px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;font-size:13px;color:#dc2626">
                 ⚠️ No eligible cover staff found for this position in your area.
+              </div>
+
+              <!-- Replacement name dropdown (populated by preview engine) -->
+              <div class="form-group" id="replacement-name-group">
+                <label class="form-label">Replacement Staff
+                  <span id="abs-rep-badge" style="display:none;font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 8px;border-radius:999px;margin-left:6px;font-weight:600"></span>
+                </label>
+                <select class="form-control" id="abs-replacement-name" style="font-weight:600">
+                  <option value="">— Select from recommended list —</option>
+                </select>
               </div>
 
               <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
@@ -622,11 +641,17 @@ textarea.form-control{resize:vertical;min-height:80px}
                   </div>
                   <div class="form-group">
                     <label class="form-label required">Position Needed</label>
-                    <select class="form-control" id="rep-position">
-                      <option value="">— Select —</option>
-                      <option>Teller</option><option>Customer Service</option>
-                      <option>Supervisor</option><option>Senior Teller</option>
-                      <option>Operations Officer</option>
+                    <select class="form-control" id="rep-position" onchange="onRepPositionChange()">
+                      <option value="">— Select position —</option>
+                      <option value="Branch Manager">Branch Manager (BM)</option>
+                      <option value="Branch Operations Manager">Branch Operations Manager (BOM)</option>
+                      <option value="Assistant Branch Manager">Assistant Branch Manager (ABM)</option>
+                      <option value="Relationship Manager">Relationship Manager (RM)</option>
+                      <option value="Relationship Officer">Relationship Officer (RO)</option>
+                      <option value="Head Teller">Head Teller</option>
+                      <option value="Teller">Teller</option>
+                      <option value="SO">Service Officer (SO)</option>
+                      <option value="BOO">Branch Operations Officer (BOO)</option>
                     </select>
                   </div>
                   <div class="form-group">
@@ -639,6 +664,15 @@ textarea.form-control{resize:vertical;min-height:80px}
                       <option value="no">No — Same Area Only</option>
                       <option value="yes">Yes — Any Area</option>
                     </select>
+                  </div>
+                  <!-- Compatible positions picker — appears after position typed -->
+                  <div id="rep-compat-section" style="display:none">
+                    <label class="form-label" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">
+                      Also search these compatible positions:
+                    </label>
+                    <div id="rep-pos-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+                      <!-- populated by JS when position changes -->
+                    </div>
                   </div>
                   <button class="btn btn-primary" style="width:100%" onclick="runReplacementEngine()">🤖 Find Best Match</button>
                 </div>
@@ -1433,17 +1467,92 @@ function _norm(s) {
 
 // ── Position-group classifier ────────────────────────────────────────────────
 // Maps title variants to a canonical role group so "Sr. BM" === "Branch Manager"
+// ── Position-group classifier ────────────────────────────────────────────────
+// Each title maps to ONE specific group. Groups are intentionally kept
+// granular so the coverage matrix below can express real KIB hierarchy.
 function _posGroup(pos) {
   const p = _norm(pos);
-  // NOTE: order matters — check 'relations' BEFORE 'manager' so
-  // "Relationship Manager" / "RM" does NOT fall into the manager group
-  if (/^rm$|sr rm|acting rm|relation/.test(p))          return 'relations_mgr';  // RM, Sr. RM, Acting RM
-  if (/^ro$|sr ro|acting ro/.test(p))                   return 'relations_off';  // RO, Sr. RO, Acting RO
-  if (/branch.*manager|^bm$|sr.*bm|abm|bom/.test(p))   return 'branch_mgr';     // BM, Sr. BM, ABM, BOM
-  if (/teller/.test(p))                                 return 'teller';          // Teller, H.Teller, Lead Teller
-  if (/^so$|service.*off/.test(p))                      return 'service_off';     // SO
-  if (/back.*off|^boo$/.test(p))                        return 'back_office';     // BOO, Back Office
-  return p; // exact fallback for any unrecognised title
+  // ── Check most specific first ─────────────────────────────────────────────
+  if (/branch.*ops|^bom$|operation.*manager|ops.*manager/.test(p))  return 'bom';          // BOM / Operations Manager
+  if (/^abm$|assist.*branch|asst.*branch/.test(p))                  return 'abm';          // ABM
+  if (/^rm$|sr rm|acting rm|relation.*manager/.test(p))             return 'rm';           // RM, Sr. RM, Acting RM
+  if (/^ro$|sr ro|acting ro|relation.*off/.test(p))                 return 'ro';           // RO, Sr. RO, Acting RO
+  if (/^bm$|sr.*bm|branch.*manager/.test(p))                       return 'bm';           // BM, Sr. BM, Branch Manager
+  if (/head.*teller|h\.?teller|lead.*teller/.test(p))              return 'head_teller';  // Head Teller / Lead Teller
+  if (/teller/.test(p))                                             return 'teller';       // Teller
+  if (/^so$|service.*off/.test(p))                                  return 'so';           // SO
+  if (/^boo$|branch.*ops.*off|back.*off/.test(p))                   return 'boo';          // BOO / Back Office
+  return p.replace(/\s+/g,'_');  // exact fallback
+}
+
+// ── Coverage compatibility matrix ────────────────────────────────────────────
+// Defines which groups CAN legitimately cover each position group.
+// Used when no exact-position candidate is available.
+// Format: 'position_that_needs_cover': ['groups_that_can_cover', ...]
+//         Listed in priority order — first = most suitable
+const COVER_MATRIX = {
+  'bm':          ['abm', 'bom'],              // BM covered by: ABM, Operations Manager
+  'bom':         ['abm', 'bm', 'boo'],        // BOM covered by: ABM, BM, BOO
+  'abm':         ['bm', 'bom'],               // ABM covered by: BM, BOM
+  'rm':          ['ro', 'abm'],               // RM covered by: RO, ABM
+  'ro':          ['rm', 'so'],                // RO covered by: RM, SO
+  'head_teller': ['teller', 'boo'],           // Head Teller by: Teller, BOO
+  'teller':      ['head_teller', 'so', 'boo'],// Teller by: Head Teller, SO, BOO
+  'so':          ['teller', 'boo', 'ro'],     // SO by: Teller, BOO, RO
+  'boo':         ['so', 'teller'],            // BOO by: SO, Teller
+};
+
+// ── Returns list of compatible groups for cross-position cover ───────────────
+function _compatibleGroups(targetGroup) {
+  return COVER_MATRIX[targetGroup] || [];
+}
+
+
+// ── selectReplacementByGroups — search specific position groups explicitly ─────
+// Used when manager has hand-picked which compatible positions can cover.
+function selectReplacementByGroups(branch, position, date, crossArea, absentEmpId, allowedGroups, mergeWithExact=false) {
+  const timestamp  = new Date().toISOString();
+  const targetGroup= _posGroup(position);
+  const branchArea = _norm(branch.area);
+
+  const baseFilter = e => {
+    if (absentEmpId && e.id === absentEmpId) return false;
+    if (_norm(e.branch) === _norm(branch.id)) return false;
+    if (!crossArea && e.area && e.area.toString().trim() !== '' && _norm(e.area) !== branchArea) return false;
+    return true;
+  };
+
+  const allCandidates = EMPLOYEES.filter(e =>
+    baseFilter(e) && allowedGroups.includes(_posGroup(e.position))
+  );
+
+  const classified = allCandidates.map(e => ({
+    employee:   e,
+    eligible:   _getIneligibilityReason(e, branch, date) === null,
+    skipReason: _getIneligibilityReason(e, branch, date),
+  }));
+
+  const eligible   = classified.filter(c => c.eligible).map(c => c.employee);
+  const ineligible = classified.filter(c => !c.eligible);
+  ineligible.forEach(c => { c.employee.unavailableCount = (c.employee.unavailableCount||0)+1; });
+
+  const ranked = _rankByFairness(eligible, date, targetGroup);
+  const decisionRecord = {
+    id: `DEC-${Date.now()}`, timestamp,
+    branch_id: branch.id, branch_name: branch.name,
+    position, position_group: targetGroup,
+    allowed_groups: allowedGroups,
+    date, cross_area: crossArea,
+    candidate_pool_size: allCandidates.length,
+    eligible_count: eligible.length,
+    ineligible_count: ineligible.length,
+    ranked_candidates: ranked.map((r,i)=>({rank:i+1,emp_id:r.employee.id,name:r.employee.name,position:r.employee.position})),
+    skipped_ineligible: ineligible.map(c=>({emp_id:c.employee.id,name:c.employee.name,skip_reason:c.skipReason})),
+    selected: ranked.length>0?{emp_id:ranked[0].employee.id,name:ranked[0].employee.name}:null,
+    note: `Cross-position search: [${allowedGroups.join(',')}]`,
+  };
+  REPLACEMENT_DECISION_LOG.unshift(decisionRecord);
+  return { ranked, ineligible, decisionRecord, hasResult: ranked.length>0 };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1462,7 +1571,21 @@ function runReplacementEngine() {
   const branch = BRANCHES.find(b => b.id === branchId);
   if (!branch) return;
 
-  const result = selectReplacement(branch, position, date, crossArea, null);
+  const checkedGroups = getCheckedGroups('rep-pos-checkboxes');
+  let result;
+  if(checkedGroups.length > 0){
+    // Manager has selected specific compatible positions — search those explicitly
+    result = selectReplacementByGroups(branch, position, date, crossArea, null, checkedGroups, true);
+    // Also merge in exact-position results (always included)
+    const exactResult = selectReplacement(branch, position, date, crossArea, null, false);
+    // Combine and re-rank
+    const allRanked = [...exactResult.ranked, ...result.ranked.filter(r=>!exactResult.ranked.find(e=>e.employee.id===r.employee.id))];
+    allRanked.sort((a,b)=>b.priorityScore-a.priorityScore);
+    result = { ...result, ranked: allRanked, hasResult: allRanked.length>0,
+               ineligible: [...exactResult.ineligible,...result.ineligible] };
+  } else {
+    result = selectReplacement(branch, position, date, crossArea, null, false);
+  }
   renderReplacementResults(branch, position, date, result);
 }
 
@@ -1477,39 +1600,39 @@ function runReplacementEngine() {
 //    crossArea   — true = search all areas, false = same area only
 //    absentEmpId — exclude this specific employee ID (the absent one)
 // ════════════════════════════════════════════════════════════════════════════
-function selectReplacement(branch, position, date, crossArea, absentEmpId) {
+// crossPosition: true = allow compatible positions from COVER_MATRIX
+function selectReplacement(branch, position, date, crossArea, absentEmpId, crossPosition=false) {
   const timestamp    = new Date().toISOString();
   const targetGroup  = _posGroup(position);
   const branchArea   = _norm(branch.area);
+  const compatGroups = crossPosition ? _compatibleGroups(targetGroup) : [];
 
-  // ── Debug: log pool composition on first call ─────────────────────────────
-  console.log(`[Engine] Searching: pos="${position}" (group="${targetGroup}") area="${branch.area}" date=${date} crossArea=${crossArea}`);
-  console.log(`[Engine] Total employees: ${EMPLOYEES.length}, sample areas:`, [...new Set(EMPLOYEES.slice(0,5).map(e=>e.area))]);
+  console.log(`[Engine] pos="${position}" group="${targetGroup}" crossPos=${crossPosition} compat=[${compatGroups}] area="${branch.area}"`);
 
-  // ── 2a. Build full candidate pool ─────────────────────────────────────────
-  // Rules:
-  //   - Exclude the absent employee
-  //   - Exclude employees at the same branch (can't cover own branch)
-  //   - Area filter: ONLY if e.area is non-empty AND crossArea is false
-  //     (if API returns no area field, employee is included — better to over-include)
-  //   - Position group must match
-  const allCandidates = EMPLOYEES.filter(e => {
+  // ── 2a. Build candidate pool ───────────────────────────────────────────────
+  const baseFilter = e => {
     if (absentEmpId && e.id === absentEmpId) return false;
     if (_norm(e.branch) === _norm(branch.id)) return false;
-    // Area filter — only apply if employee HAS area data and we're not cross-area
     if (!crossArea && e.area && e.area.toString().trim() !== '' && _norm(e.area) !== branchArea) return false;
-    if (_posGroup(e.position) !== targetGroup) return false;
     return true;
-  });
+  };
 
-  console.log(`[Engine] Candidates found: ${allCandidates.length} (group=${targetGroup}, area=${branchArea})`);
+  // Exact-position candidates
+  const exactCandidates = EMPLOYEES.filter(e => baseFilter(e) && _posGroup(e.position) === targetGroup);
+
+  // Compatible-position candidates (labelled separately for ranking + UI)
+  const compatCandidates = crossPosition
+    ? EMPLOYEES.filter(e => baseFilter(e)
+        && _posGroup(e.position) !== targetGroup
+        && compatGroups.includes(_posGroup(e.position)))
+    : [];
+
+  const allCandidates = [...exactCandidates, ...compatCandidates];
+
+  console.log(`[Engine] Exact: ${exactCandidates.length}  Compat: ${compatCandidates.length}`);
   if (allCandidates.length === 0 && EMPLOYEES.length > 0) {
-    // Diagnostic: show why pool is empty
     const posGroups = [...new Set(EMPLOYEES.map(e => _posGroup(e.position)))];
-    const areas     = [...new Set(EMPLOYEES.map(e => e.area||'(empty)'))];
-    console.warn('[Engine] Empty pool! Position groups in data:', posGroups);
-    console.warn('[Engine] Areas in data:', areas);
-    console.warn('[Engine] Target group:', targetGroup, ' Branch area:', branchArea);
+    console.warn('[Engine] Empty pool! Groups in data:', posGroups, ' Target:', targetGroup);
   }
 
   // ── 2b. Classify each candidate: eligible or ineligible ───────────────────
@@ -1542,9 +1665,11 @@ function selectReplacement(branch, position, date, crossArea, absentEmpId) {
     branch_id:      branch.id,
     branch_name:    branch.name,
     position,
-    position_group: targetGroup,
+    position_group:    targetGroup,
+    compat_groups:     compatGroups,
+    cross_position:    crossPosition,
     date,
-    cross_area:     crossArea,
+    cross_area:        crossArea,
     candidate_pool_size:  allCandidates.length,
     eligible_count:       eligible.length,
     ineligible_count:     ineligible.length,
@@ -1639,15 +1764,17 @@ function _getIneligibilityReason(emp, branch, date) {
 //    P4 — Skip-bonus: was eligible but unavailable before   → fairness recovery
 //    P5 — Deterministic tie-break: alphanumeric employee ID → stable, non-random
 // ════════════════════════════════════════════════════════════════════════════
-function _rankByFairness(eligibleEmployees, date) {
+function _rankByFairness(eligibleEmployees, date, targetGroup=null) {
   if (!eligibleEmployees.length) return [];
 
   const maxCover = Math.max(...eligibleEmployees.map(e => e.coverCount || 0), 1);
 
   const scored = eligibleEmployees.map(e => {
     const coverCount   = e.coverCount  || 0;
-    const skipBonus    = e.skipCount   || 0;        // times previously skipped (fairness debt)
+    const skipBonus    = e.skipCount   || 0;
     const neverCovered = coverCount === 0;
+    // isExact: did this employee's position match the target exactly?
+    const isExact = targetGroup ? _posGroup(e.position) === targetGroup : true;
 
     // Days since last cover — 9999 for never-covered (treated as "longest possible wait")
     let daysSince = 9999;
@@ -1658,12 +1785,13 @@ function _rankByFairness(eligibleEmployees, date) {
     }
 
     // ── Score formula ──────────────────────────────────────────────────────
-    // Each priority band is scaled so P1 always dominates P2, P2 dominates P3, etc.
-    //   P1: 0 or 100,000  (never covered → always wins over anyone who has covered)
-    //   P2: 0–10,000      (inverted cover count, scaled)
-    //   P3: 0–730         (days since last cover, capped at 2 years)
-    //   P4: 0–5,000       (skip bonus × 500 — fairness recovery)
-    //   P5: small negative (alphabetical ID — deterministic, predictable tie-break)
+    //   P0: -50,000 penalty for compatible-position (exact always beats compat)
+    //   P1: 0 or 100,000  (never covered)
+    //   P2: 0–10,000      (inverted cover count)
+    //   P3: 0–730         (days since last cover)
+    //   P4: 0–5,000       (skip bonus fairness recovery)
+    //   P5: small negative (alphabetical tie-break)
+    const p0 = isExact ? 0 : -50000;
     const p1 = neverCovered ? 100000 : 0;
     const p2 = maxCover > 0 ? Math.round(((maxCover - coverCount) / maxCover) * 10000) : 0;
     const p3 = Math.min(daysSince, 730);  // cap at 2 years
@@ -1671,10 +1799,13 @@ function _rankByFairness(eligibleEmployees, date) {
     // P5: convert emp_id chars to a small negative score so lower ID ranks first
     const p5 = -Array.from(e.id || '').reduce((acc, ch, i) => acc + ch.charCodeAt(0) * (i + 1), 0) / 1e6;
 
-    const priorityScore = p1 + p2 + p3 + p4 + p5;
+    const priorityScore = p0 + p1 + p2 + p3 + p4 + p5;
 
     // ── Build human-readable ranking explanation ───────────────────────────
     const reasons = [];
+    if (!isExact) {
+      reasons.push(`🔄 Cross-position cover — compatible with ${targetGroup}`);
+    }
     if (neverCovered) {
       reasons.push('✦ Never covered before — highest priority (P1)');
     } else {
@@ -1995,13 +2126,30 @@ function showCoverPreview(branch, absentEmp, date) {
   const list     = document.getElementById('abs-cover-list');
   const badge    = document.getElementById('abs-cover-badge');
 
-  // Use full engine — same area, exclude absent employee
-  let result = selectReplacement(branch, absentEmp.position, date, false, absentEmp.id);
+  // Read which compatible groups the manager has checked
+  const userCheckedGroups = getCheckedGroups('abs-pos-checkboxes');
+  const hasCompatChecked  = userCheckedGroups.length > 0;
 
-  // Tier 2: if no eligible in same area, try cross-area
-  let tier = result.hasResult ? 1 : 2;
+  // Tier 1: exact position, same area
+  let result = selectReplacement(branch, absentEmp.position, date, false, absentEmp.id, false);
+  let tier = 1;
+
+  // Tier 2: user-selected compatible positions, same area
+  if (!result.hasResult && hasCompatChecked) {
+    result = selectReplacementByGroups(branch, absentEmp.position, date, false, absentEmp.id, userCheckedGroups);
+    tier = 2;
+  }
+
+  // Tier 3: exact position, cross-area
   if (!result.hasResult) {
-    result = selectReplacement(branch, absentEmp.position, date, true, absentEmp.id);
+    result = selectReplacement(branch, absentEmp.position, date, true, absentEmp.id, false);
+    tier = 3;
+  }
+
+  // Tier 4: user-selected compatible positions, cross-area
+  if (!result.hasResult && hasCompatChecked) {
+    result = selectReplacementByGroups(branch, absentEmp.position, date, true, absentEmp.id, userCheckedGroups);
+    tier = 4;
   }
 
   if (!result.hasResult) {
@@ -2011,9 +2159,13 @@ function showCoverPreview(branch, absentEmp, date) {
   }
 
   const { ranked } = result;
-  const tierLabel = tier === 2
-    ? '<span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ Cross-area — no staff in same area available</span>'
-    : '';
+  const tierLabels = {
+    1: '',
+    2: '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:4px;margin-left:6px">🔄 Compatible position — no exact match available</span>',
+    3: '<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:4px;margin-left:6px">🌐 Cross-area — no staff in same area</span>',
+    4: '<span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;margin-left:6px">⚠ Cross-area + compatible position</span>',
+  };
+  const tierLabel = tierLabels[tier] || '';
 
   badge.textContent = result.ranked.length + ' eligible';
 
@@ -2165,13 +2317,25 @@ function onAbsBranchChange(){
     if(emp){
       document.getElementById('abs-position').value=emp.position;
       const date=document.getElementById('abs-start').value||new Date().toISOString().slice(0,10);
-      // Reset dropdown so preview can re-populate
       const repSel=document.getElementById('abs-replacement-name');
       if(repSel){ repSel.innerHTML='<option value="">— Loading... —</option>'; repSel.value=''; }
-      showCoverPreview(branch, emp, date);
+      const needs=document.querySelector('input[name="abs-needs-rep"]:checked')?.value||'yes';
+      if(needs!=='no'){
+        // Show compatible position checkboxes (built from COVER_MATRIX for this position)
+        showCompatCheckboxesForAbsence(emp.position, branch, emp, date);
+        // Re-wire checkbox changes to refresh preview
+        setTimeout(()=>{
+          const cbBox=document.getElementById('abs-pos-checkboxes');
+          cbBox?.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+            cb.onchange=()=>showCoverPreview(branch,emp,date);
+          });
+        },0);
+        showCoverPreview(branch, emp, date);
+      }
     } else {
       document.getElementById('abs-cover-preview').style.display='none';
       document.getElementById('abs-no-cover').style.display='none';
+      document.getElementById('abs-cover-positions').style.display='none';
     }
   }
   empSelect.onchange = refreshPreview;
@@ -2182,13 +2346,123 @@ function onAbsBranchChange(){
 
 // showCoverPreview is defined in the engine block above
 
+// ── Position label map (group → human readable) ───────────────────────────────
+const POS_LABELS = {
+  bm:          'Branch Manager (BM)',
+  bom:         'Branch Operations Manager (BOM)',
+  abm:         'Assistant Branch Manager (ABM)',
+  rm:          'Relationship Manager (RM)',
+  ro:          'Relationship Officer (RO)',
+  head_teller: 'Head Teller',
+  teller:      'Teller',
+  so:          'Service Officer (SO)',
+  boo:         'Branch Operations Officer (BOO)',
+};
+
+// ── Build checkbox set for compatible positions ────────────────────────────────
+function buildCompatCheckboxes(containerId, targetPosition, checkedGroups=[]) {
+  const container  = document.getElementById(containerId);
+  if (!container) return;
+
+  const targetGroup = _posGroup(targetPosition);
+  const compatible  = _compatibleGroups(targetGroup);  // from COVER_MATRIX
+
+  if (!compatible.length) {
+    container.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No compatible positions defined for this title.</span>';
+    return;
+  }
+
+  container.innerHTML = compatible.map(grp => {
+    const label   = POS_LABELS[grp] || grp;
+    const checked = checkedGroups.includes(grp) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">
+      <input type="checkbox" value="${grp}" ${checked} style="accent-color:#1D6FBB"> ${label}
+    </label>`;
+  }).join('');
+}
+
+// ── Get selected compatible groups from a container ───────────────────────────
+function getCheckedGroups(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
+}
+
+// ── Report Absence: needs-replacement radio change ────────────────────────────
+function onNeedsRepChange(){
+  const needs  = document.querySelector('input[name="abs-needs-rep"]:checked')?.value || 'yes';
+  const posBox = document.getElementById('abs-cover-positions');
+  const repGrp = document.getElementById('replacement-name-group');
+  const preview= document.getElementById('abs-cover-preview');
+  const nocover= document.getElementById('abs-no-cover');
+  const repSel = document.getElementById('abs-replacement-name');
+
+  if(needs === 'no'){
+    if(posBox) posBox.style.display = 'none';
+    if(repGrp) repGrp.style.display = 'none';
+    preview.style.display = 'none';
+    nocover.style.display = 'none';
+  } else {
+    if(posBox && posBox.querySelector('input')) posBox.style.display = 'block';
+    if(repGrp) repGrp.style.display = '';
+    // Re-run preview with current employee
+    const empSelect = document.getElementById('abs-employee');
+    const emp = EMPLOYEES.find(e => e.id === empSelect?.value);
+    const branch = BRANCHES.find(b => b.id === document.getElementById('abs-branch')?.value);
+    const date = document.getElementById('abs-start')?.value || new Date().toISOString().slice(0,10);
+    if(emp && branch) showCoverPreview(branch, emp, date);
+  }
+}
+
+// ── Report Absence: after employee selected, show compat checkboxes ───────────
+function showCompatCheckboxesForAbsence(position, branch, emp, date) {
+  const posBox = document.getElementById('abs-cover-positions');
+  const cbBox  = document.getElementById('abs-pos-checkboxes');
+  if (!cbBox) return;
+
+  const targetGroup = _posGroup(position);
+  const compatible  = _compatibleGroups(targetGroup);
+
+  if (!compatible.length) {
+    if (posBox) posBox.style.display = 'none';
+    return;
+  }
+
+  // Build checkboxes — none checked by default
+  buildCompatCheckboxes('abs-pos-checkboxes', position, []);
+
+  // When any checkbox changes → re-run preview
+  cbBox.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => { if(emp && branch) showCoverPreview(branch, emp, date); });
+  });
+
+  if (posBox) posBox.style.display = 'block';
+}
+
+// ── Find Coverage: position changed → show compat checkboxes ─────────────────
+function onRepPositionChange() {
+  const pos     = document.getElementById('rep-position')?.value || '';
+  const section = document.getElementById('rep-compat-section');
+  const cbBox   = document.getElementById('rep-pos-checkboxes');
+  if (!section || !cbBox) return;
+
+  if (!pos) { section.style.display = 'none'; return; }
+
+  const targetGroup = _posGroup(pos);
+  const compatible  = _compatibleGroups(targetGroup);
+
+  if (!compatible.length) {
+    section.style.display = 'none';
+    return;
+  }
+
+  buildCompatCheckboxes('rep-pos-checkboxes', pos, []);
+  section.style.display = 'block';
+}
+
+// ── Legacy toggleReplacementField (kept for any old references) ───────────────
 function toggleReplacementField(){
-  const needs = document.getElementById('abs-needs-replacement').value;
-  const grp = document.getElementById('replacement-name-group');
-  const preview = document.getElementById('abs-cover-preview');
-  const nocover = document.getElementById('abs-no-cover');
-  if(grp) grp.style.display = needs==='yes' ? '' : 'none';
-  if(needs==='no'){ preview.style.display='none'; nocover.style.display='none'; }
+  onNeedsRepChange();
 }
 
 function submitAbsence(){
