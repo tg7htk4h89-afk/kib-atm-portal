@@ -489,6 +489,26 @@ textarea.form-control{resize:vertical;min-height:80px}
                 </select>
               </div>
 
+              <!-- Cross-area coverage toggle -->
+              <div id="abs-cross-area-section" style="display:none;margin-bottom:12px;padding:12px 16px;background:#fffbeb;border:1.5px solid #d97706;border-radius:8px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div>
+                    <div style="font-size:13px;font-weight:700;color:#d97706">🌐 Include Other Area Staff?</div>
+                    <div style="font-size:11px;color:#92400e;margin-top:2px">Cross-area cover requires approval from the other area's manager</div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="abs-cross-area-toggle" onchange="onCrossAreaToggle()" style="width:16px;height:16px;accent-color:#d97706">
+                    <span style="font-size:13px;font-weight:600;color:#d97706">Search other area</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Cross-area pending approval banner (shown after submit) -->
+              <div id="abs-cross-area-pending" style="display:none;margin-bottom:12px;padding:14px 16px;background:#fef3c7;border:2px solid #d97706;border-radius:8px">
+                <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:4px">⏳ Awaiting Cross-Area Approval</div>
+                <div id="abs-cross-area-pending-text" style="font-size:12px;color:#78350f"></div>
+              </div>
+
               <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
                 <button class="btn btn-secondary" onclick="clearAbsForm()">Clear</button>
                 <button class="btn btn-primary" id="abs-submit-btn" onclick="submitAbsence()">Submit & Confirm Cover</button>
@@ -754,6 +774,63 @@ textarea.form-control{resize:vertical;min-height:80px}
         </div>
 
         <!-- PAGE: COVERAGE HISTORY -->
+        <!-- PAGE: CROSS-AREA REQUESTS -->
+        <div class="page" id="page-cross_area">
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">🌐 Cross-Area Coverage Requests</div>
+                <div class="card-subtitle">Requests where staff from your area are needed to cover another area</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="loadCrossAreaRequests()">🔄 Refresh</button>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                <select class="form-control" id="ca-filter-status" onchange="renderCrossAreaTable()" style="width:180px">
+                  <option value="">All Requests</option>
+                  <option value="Pending Cross-Area Approval">Pending Approval</option>
+                  <option value="Cross-Area Approved">Approved</option>
+                  <option value="Cross-Area Rejected">Rejected</option>
+                </select>
+                <select class="form-control" id="ca-filter-area" onchange="renderCrossAreaTable()" style="width:150px">
+                  <option value="">All Areas</option>
+                  <option value="Area 1">Area 1</option>
+                  <option value="Area 2">Area 2</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr>
+                    <th>Absent Staff</th>
+                    <th>Branch</th>
+                    <th>Proposed Cover</th>
+                    <th>Cover's Area</th>
+                    <th>Date</th>
+                    <th>Requested By</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr></thead>
+                  <tbody id="cross-area-table-body">
+                    <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">Loading...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Info card explaining the process -->
+          <div class="card">
+            <div class="card-header"><div class="card-title" style="font-size:13px">ℹ️ How Cross-Area Coverage Works</div></div>
+            <div class="card-body" style="font-size:12px;color:var(--text-muted);line-height:1.8">
+              <div><strong>1.</strong> Area Manager reports an absence with no same-area cover available</div>
+              <div><strong>2.</strong> They enable "Search other area" and select a cross-area replacement</div>
+              <div><strong>3.</strong> The request appears here — the <strong>other area's manager</strong> must approve</div>
+              <div><strong>4.</strong> Once approved, the replacement is confirmed and coverage history is updated</div>
+              <div><strong>5.</strong> If rejected, the absence goes back to "Needs Replacement" status</div>
+            </div>
+          </div>
+        </div>
+
         <div class="page" id="page-coverage">
           <div class="filter-bar">
             <input type="date" class="form-control" id="cov-from" style="width:140px">
@@ -1040,12 +1117,12 @@ const ROLE_MAP = {
   // Area Manager — gives FINAL approval (BM Approved → Approved), reports absence
   'area_manager': {
     role:'Area Manager', area:null, color:'#16a34a',
-    permissions:['dashboard','absence','leave','branches','coverage','audit']
+    permissions:['dashboard','absence','leave','branches','coverage','cross_area','audit']
   },
   // Head of Branches — can approve at any stage, full WFM visibility
   'head_branches': {
     role:'Head of Branches', area:null, color:'#1D6FBB',
-    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit']
+    permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','cross_area','fairness','audit']
   },
   // ATM Manager — read-only dashboard + branches
   'manager':     { role:'ATM Manager',    area:null, color:'#6C3483', permissions:['dashboard','branches'] },
@@ -1091,6 +1168,7 @@ const NAV_ITEMS = [
   {id:'replacement', label:'Find Coverage',    icon:'🤖', section:'OPERATIONS'},
   {id:'branches',    label:'Branch Status',    icon:'🏢', section:'WORKFORCE'},
   {id:'coverage',    label:'Coverage History', icon:'📋', section:'WORKFORCE'},
+  {id:'cross_area',  label:'Cross-Area Requests', icon:'🌐', section:'WORKFORCE', badge:null, badgeColor:'amber'},
   {id:'employees',   label:'All Staff',        icon:'👤', section:'WORKFORCE'},
   {id:'fairness',    label:'Fairness Monitor', icon:'⚖️',  section:'ANALYTICS'},
   {id:'audit',       label:'Audit Log',        icon:'🔍', section:'ANALYTICS'},
@@ -1150,6 +1228,7 @@ function initApp(){
     loadRealEmployees();
     loadRealLeaves();
     loadRealAbsences();
+    loadCrossAreaRequests();
   }
 
   // Load default page
@@ -1229,13 +1308,13 @@ function navigateTo(page){
   const titles={
     dashboard:'Dashboard',absence:'Report Absence',replacement:'Replacement Engine',
     leave:'Leave Management',employees:'Employee Master',branches:'Branch Status',
-    coverage:'Coverage History',fairness:'Fairness Monitor',audit:'Audit Log',settings:'Settings'
+    coverage:'Coverage History',cross_area:'Cross-Area Requests',fairness:'Fairness Monitor',audit:'Audit Log',settings:'Settings'
   };
   const subs={
     dashboard:`Welcome, ${currentUser.role}`,absence:'Record and manage staff absences',
     replacement:'Fair, neutral, explainable replacement selection',
     leave:'Plan and coordinate leave across branches',employees:'Manage all branch staff',
-    branches:'Live branch staffing health',coverage:'Full coverage assignment history',
+    branches:'Live branch staffing health',coverage:'Full coverage assignment history',cross_area:'Requests requiring your area approval',
     fairness:'Monitor replacement fairness and queue state',
     audit:'Immutable action audit trail',settings:'System configuration and integrations'
   };
@@ -1243,6 +1322,7 @@ function navigateTo(page){
   document.getElementById('page-sub').textContent=subs[page]||'';
 
   if(page==='dashboard') renderDashboard();
+  if(page==='cross_area') loadCrossAreaRequests();
   closeSidebar();
 }
 
@@ -2346,6 +2426,123 @@ function onAbsBranchChange(){
 
 // showCoverPreview is defined in the engine block above
 
+// ════════════════════════════════════════════════════════════════════════════
+//  CROSS-AREA COVERAGE MODULE
+// ════════════════════════════════════════════════════════════════════════════
+let CROSS_AREA_REQUESTS = [];
+
+function onCrossAreaToggle() {
+  const enabled = document.getElementById('abs-cross-area-toggle')?.checked;
+  const emp    = EMPLOYEES.find(e=>e.id===document.getElementById('abs-employee')?.value);
+  const branch = BRANCHES.find(b=>b.id===document.getElementById('abs-branch')?.value);
+  const date   = document.getElementById('abs-start')?.value||new Date().toISOString().slice(0,10);
+  const repSel = document.getElementById('abs-replacement-name');
+  if(repSel){repSel.innerHTML='<option value="">— Loading... —</option>';repSel.value='';}
+  if(emp&&branch) showCoverPreview(branch,emp,date,enabled);
+}
+
+function showOrHideCrossAreaToggle(hasNoSameArea){
+  const sec=document.getElementById('abs-cross-area-section');
+  if(sec) sec.style.display=hasNoSameArea?'block':'none';
+}
+
+function getSelectedReplacementInfo(){
+  const repSel=document.getElementById('abs-replacement-name');
+  if(!repSel||!repSel.value) return null;
+  const opt=repSel.options[repSel.selectedIndex];
+  return{name:repSel.value,area:opt?.dataset?.area||null,empId:opt?.dataset?.empId||null,isCrossArea:opt?.dataset?.crossArea==='true'};
+}
+
+async function loadCrossAreaRequests(){
+  if(CONFIG.USE_API){
+    const res=await WFM_API.get('wfm-cross-area-requests',{area:currentUser.area||'',role:currentUser.atm_role||''});
+    if(res&&res.success&&res.requests) CROSS_AREA_REQUESTS=res.requests;
+  }
+  renderCrossAreaTable();
+  updateCrossAreaBadge();
+}
+
+function renderCrossAreaTable(){
+  const tbody=document.getElementById('cross-area-table-body');
+  if(!tbody) return;
+  const filterSt  =document.getElementById('ca-filter-status')?.value||'';
+  const filterArea=document.getElementById('ca-filter-area')?.value||'';
+  let filtered=CROSS_AREA_REQUESTS;
+  if(currentUser.area) filtered=filtered.filter(r=>r.replacement_area===currentUser.area||r.absent_area===currentUser.area);
+  if(filterSt)   filtered=filtered.filter(r=>r.status===filterSt);
+  if(filterArea) filtered=filtered.filter(r=>r.replacement_area===filterArea||r.absent_area===filterArea);
+
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No cross-area requests${filterSt?' with status "'+filterSt+'"':''}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML=filtered.map(r=>{
+    const isPending=r.status==='Pending Cross-Area Approval';
+    const canApprove=isPending&&(currentUser.role==='Head of Branches'||(currentUser.role==='Area Manager'&&currentUser.area===r.replacement_area));
+    const sb=isPending?'badge-amber':r.status==='Cross-Area Approved'?'badge-green':'badge-red';
+    return`<tr>
+      <td><div style="font-weight:600;font-size:12px">${r.absent_employee}</div><div style="font-size:10px;color:var(--text-muted)">${r.position} · ${r.absent_area}</div></td>
+      <td style="font-size:12px">${r.branch_name}</td>
+      <td><div style="font-weight:600;font-size:12px">${r.replacement_name}</div><div style="font-size:10px;color:var(--text-muted)">${r.replacement_area}</div></td>
+      <td><span class="badge ${r.replacement_area==='Area 1'?'badge-blue':'badge-amber'}" style="font-size:10px">${r.replacement_area}</span></td>
+      <td class="mono" style="font-size:11px">${r.start_date}</td>
+      <td style="font-size:11px">${r.requested_by}</td>
+      <td><span class="badge ${sb}" style="font-size:10px">${r.status}</span></td>
+      <td style="white-space:nowrap">${canApprove?`<button class="btn btn-sm btn-success" onclick="approveCrossArea('${r.request_id}')">✓ Approve</button><button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectCrossArea('${r.request_id}')">✗ Reject</button>`:'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateCrossAreaBadge(){
+  const pending=CROSS_AREA_REQUESTS.filter(r=>r.status==='Pending Cross-Area Approval'&&(currentUser.role==='Head of Branches'||(currentUser.role==='Area Manager'&&r.replacement_area===currentUser.area))).length;
+  const navEl=document.getElementById('nav-cross_area');
+  if(!navEl) return;
+  let badge=navEl.querySelector('.nav-badge');
+  if(pending>0){if(badge)badge.textContent=pending;else navEl.innerHTML+=`<span class="nav-badge amber">${pending}</span>`;}
+  else if(badge) badge.remove();
+}
+
+async function approveCrossArea(requestId){
+  const req=CROSS_AREA_REQUESTS.find(r=>r.request_id===requestId);
+  if(!req) return;
+  req.status='Cross-Area Approved';
+  req.approved_by=currentUser.full_name||currentUser.username;
+  req.approved_at=new Date().toISOString().slice(0,16).replace('T',' ');
+  addAuditEntry('CrossAreaApproved',`${req.replacement_name} (${req.replacement_area}) approved to cover ${req.absent_employee} at ${req.branch_name}`);
+  renderCrossAreaTable();updateCrossAreaBadge();renderDashboard();
+  toast(`✅ Cross-area cover approved — ${req.replacement_name} confirmed`,'success');
+  if(CONFIG.USE_API){
+    try{const res=await WFM_API.post('wfm-cross-area-approve',{request_id:requestId,action:'Approved',approved_by:req.approved_by,approved_at:req.approved_at});
+      if(res&&res.success)toast('✅ Saved to Sheets','success');else toast('⚠️ Approved locally','warning');}
+    catch(e){console.warn(e);}
+  }
+}
+
+async function rejectCrossArea(requestId){
+  const req=CROSS_AREA_REQUESTS.find(r=>r.request_id===requestId);
+  if(!req) return;
+  req.status='Cross-Area Rejected';
+  req.approved_by=currentUser.full_name||currentUser.username;
+  req.approved_at=new Date().toISOString().slice(0,16).replace('T',' ');
+  addAuditEntry('CrossAreaRejected',`Cross-area rejected — ${req.replacement_name} will NOT cover ${req.branch_name}`);
+  renderCrossAreaTable();updateCrossAreaBadge();
+  toast('Cross-area request rejected','warning');
+  if(CONFIG.USE_API){
+    try{await WFM_API.post('wfm-cross-area-approve',{request_id:requestId,action:'Rejected',approved_by:req.approved_by,approved_at:req.approved_at});}
+    catch(e){console.warn(e);}
+  }
+}
+
+async function submitCrossAreaRequest(absenceId,absentEmp,branch,repName,repArea,repEmpId,date,reportedBy){
+  const reqId='CAR-'+Date.now().toString().slice(-6);
+  const request={request_id:reqId,absence_id:absenceId,absent_emp_id:absentEmp.id,absent_employee:absentEmp.name,absent_area:branch.area,branch_id:branch.id,branch_name:branch.name,position:absentEmp.position,replacement_emp_id:repEmpId,replacement_name:repName,replacement_area:repArea,start_date:date,requested_by:reportedBy,requested_at:new Date().toISOString().slice(0,16).replace('T',' '),status:'Pending Cross-Area Approval',approved_by:'',approved_at:''};
+  CROSS_AREA_REQUESTS.unshift(request);
+  updateCrossAreaBadge();
+  addAuditEntry('CrossAreaRequested',`${repName} (${repArea}) requested to cover ${absentEmp.name} at ${branch.name} on ${date}`);
+  if(CONFIG.USE_API){try{await WFM_API.post('wfm-cross-area-request',request);}catch(e){console.warn(e);}}
+  return request;
+}
+
 // ── Position label map (group → human readable) ───────────────────────────────
 const POS_LABELS = {
   bm:          'Branch Manager (BM)',
@@ -3337,23 +3534,28 @@ async function submitAbsence(){
   if(!branchId||!empId||!absType||!start){toast('Fill required fields','error');return;}
 
   if(CONFIG.USE_API){
-    const emp     = EMPLOYEES.find(e=>e.id===empId);
-    const branch  = BRANCHES.find(b=>b.id===branchId);
-    const repName = document.getElementById('abs-replacement-name')?.value?.trim()||'';
-    const needsRep= document.getElementById('abs-needs-replacement')?.value||'yes';
+    const emp      = EMPLOYEES.find(e=>e.id===empId);
+    const branch   = BRANCHES.find(b=>b.id===branchId);
+    const repInfo  = getSelectedReplacementInfo();
+    const repName  = repInfo?.name || document.getElementById('abs-replacement-name')?.value?.trim()||'';
+    const isCrossArea = repInfo?.isCrossArea === true;
+    const repArea  = repInfo?.area || '';
+    const needsRad = document.querySelector('input[name="abs-needs-rep"]:checked')?.value||'yes';
     const res = await WFM_API.post('wfm-absence', {
-      emp_id:            empId,
-      absence_type:      absType,
-      start_date:        start,
-      return_date:       document.getElementById('abs-return').value||'',
-      notes:             document.getElementById('abs-notes').value||'',
-      reported_by:       currentUser.username||currentUser.full_name||'',
-      branch_id:         branchId,
-      branch_name:       branch?.name||'',
-      position:          emp?.position||'',
-      area:              branch?.area||'',
-      replacement_name:  repName,
-      needs_replacement: needsRep,
+      emp_id:                empId,
+      absence_type:          absType,
+      start_date:            start,
+      return_date:           document.getElementById('abs-return').value||'',
+      notes:                 document.getElementById('abs-notes').value||'',
+      reported_by:           currentUser.username||currentUser.full_name||'',
+      branch_id:             branchId,
+      branch_name:           branch?.name||'',
+      position:              emp?.position||'',
+      area:                  branch?.area||'',
+      replacement_name:      repName,
+      needs_replacement:     needsRad,
+      cross_area_replacement:isCrossArea?'yes':'no',
+      replacement_area:      repArea,
     });
     const absRes = Array.isArray(res) ? (res[0]||{}) : (res||{});
     if(absRes && absRes.success){
@@ -3361,6 +3563,21 @@ async function submitAbsence(){
         ? '⚠️ Recorded with conflict: '+absRes.conflict_warning
         : '✅ Absence recorded — '+absRes.absence_id;
       toast(msg, absRes.conflict_warning?'warning':'success');
+      // If cross-area replacement → send approval request to other AM
+      if(isCrossArea && repName && repArea && emp && branch){
+        await submitCrossAreaRequest(
+          absRes.absence_id||'ABS-'+Date.now(), emp, branch,
+          repName, repArea, repInfo?.empId||'', start,
+          currentUser.username||currentUser.full_name||''
+        );
+        const pendEl  = document.getElementById('abs-cross-area-pending');
+        const pendTxt = document.getElementById('abs-cross-area-pending-text');
+        if(pendEl && pendTxt){
+          pendTxt.textContent = `Waiting for the ${repArea} manager to approve ${repName} covering ${branch.name}.`;
+          pendEl.style.display = 'block';
+        }
+        toast(`⏳ Cross-area request sent to ${repArea} manager`,'warning');
+      }
       await loadRealDashboard();
     } else {
       toast(absRes?.error||'API failed — saved locally','warning');
