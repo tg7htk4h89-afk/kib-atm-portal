@@ -49,9 +49,10 @@ const Auth = (() => {
     const map = {
       'manager':      'manager',
       'atm_manager':  'manager',       // ATM manager = manager
-      'branch_user':  'branch_user',
-      'area_manager': 'area_manager',
-      'head_branches':'head_branches',
+      'branch_user':    'branch_user',
+      'branch_manager': 'branch_manager',  // ← Branch Manager role
+      'area_manager':   'area_manager',
+      'head_branches':  'head_branches',
       'vendor':       'vendor',
       'vendor_user':  'vendor',
     };
@@ -62,9 +63,10 @@ const Auth = (() => {
   function _roleLabel(role) {
     const labels = {
       manager:       'ATM Manager',
-      branch_user:   'Branch Staff',
-      area_manager:  'Area Manager',
-      head_branches: 'Head of Branches',
+      branch_user:    'Branch Staff',
+      branch_manager: 'Branch Manager',
+      area_manager:   'Area Manager',
+      head_branches:  'Head of Branches',
       vendor:        'Vendor',
     };
     return labels[role] || role;
