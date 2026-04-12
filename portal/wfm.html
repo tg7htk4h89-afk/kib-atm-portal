@@ -1377,7 +1377,9 @@ function renderDashboard(){
   const myLeaves   = currentUser.area ? LEAVE_REQUESTS.filter(l=>myBranches.find(b=>b.id===l.branch)) : LEAVE_REQUESTS;
   const openAbsences=myAbsences.filter(a=>a.status==='Open').length;
   const pendingLeaves=myLeaves.filter(l=>l.status==='Pending'||l.status==='BM Approved').length;
-  const availableEmps=myEmps.filter(e=>e.status==='Available').length;
+  // Use ABSENCE_LOG for accurate absent count
+  const myOpenAbsences = ABSENCE_LOG.filter(a=>myBranches.find(b=>b.id===a.branch)&&a.status==='Open');
+  const availableEmps  = Math.max(0, myEmps.length - myOpenAbsences.length);
   const totalEmps=myEmps.length;
   const conflicts=detectAllConflicts().length;
   const mosFrequent=getMostFrequentCoverer();
@@ -3520,15 +3522,27 @@ function renderBranchStatus(){
 
   grid.innerHTML=branches.map(b=>{
     const emps    = EMPLOYEES.filter(e=>_norm(e.branch)===_norm(b.id));
-    const avail   = emps.filter(e=>e.status==='Available').length;
-    const onLeave = emps.filter(e=>e.status==='On Leave').length;
-    const absent  = emps.filter(e=>e.status==='Absent').length;
-    const assigned= emps.filter(e=>e.status==='On Assignment').length;
-    const openAbs = ABSENCE_LOG.filter(a=>_norm(a.branch)===_norm(b.id)&&a.status==='Open').length;
     const total   = emps.length;
 
+    // ── Use ABSENCE_LOG as authoritative source for absent count ─────────────
+    // WFM_Employees.status can be stale — AbsenceLog is always written by WFM3
+    const openAbsences = ABSENCE_LOG.filter(a=>_norm(a.branch)===_norm(b.id)&&a.status==='Open');
+    const absent  = openAbsences.length;
+
+    // On Leave: from approved leave requests for this branch
+    const onLeave = LEAVE_REQUESTS.filter(l=>
+      _norm(l.branch)===_norm(b.id) &&
+      (l.status==='Approved'||l.status==='BM Approved')
+    ).length;
+
+    // On Assignment: employees from WFM_Employees (reliable field)
+    const assigned = emps.filter(e=>e.status==='On Assignment').length;
+
+    // Available = total - absent - on leave
+    const avail = Math.max(0, total - absent - onLeave);
+    const openAbs = absent; // same as above
+
     // Availability % = (available + on_assignment) / total
-    // On Assignment are technically working (just at another branch)
     const activeCount = avail + assigned;
     const pct = total > 0 ? Math.round((activeCount / total) * 100) : 0;
 
