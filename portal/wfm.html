@@ -1587,6 +1587,22 @@ function _norm(s) {
   return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
 }
 
+// ── Count working days (excludes Friday=5 and Saturday=6 — KIB weekend) ──────
+function countWorkingDays(fromStr, toStr) {
+  if (!fromStr || !toStr) return 0;
+  const start = new Date(fromStr);
+  const end   = new Date(toStr);
+  if (end < start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay(); // 0=Sun … 5=Fri, 6=Sat
+    if (dow !== 5 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(count, 1);
+}
+
 // ── Position-group classifier ────────────────────────────────────────────────
 // Maps title variants to a canonical role group so "Sr. BM" === "Branch Manager"
 // ── Position-group classifier ────────────────────────────────────────────────
@@ -3064,7 +3080,7 @@ function submitLeaveRequest(){
     return;
   }
 
-  const days=Math.ceil((new Date(to)-new Date(from))/(1000*60*60*24))+1;
+  const days=countWorkingDays(from, to);
   const id='LV-'+String(LEAVE_REQUESTS.length+1).padStart(3,'0');
   LEAVE_REQUESTS.unshift({id,employee:emp.name,empId,branch:emp.branch,position:emp.position,
     type,from,to,days,status:'Pending',notes:document.getElementById('lv-notes').value,
@@ -3086,7 +3102,7 @@ function detectLeaveConflict(emp,from,to){
   );
   if(overlap.length) conflicts.push(`${emp.position} already on leave at ${BRANCHES.find(b=>b.id===emp.branch)?.name} during this period`);
   // Check leave balance
-  const days=Math.ceil((new Date(to)-new Date(from))/(1000*60*60*24))+1;
+  const days=countWorkingDays(from, to);
   if(emp.leaveBalance<days) conflicts.push(`Insufficient leave balance (${emp.leaveBalance} days remaining, ${days} requested)`);
   return conflicts;
 }
