@@ -1267,18 +1267,27 @@ async function checkPositionConflict(from, to) {
 }
 
 async function submitLeaveFromBranch() {
+  // ── Hard guard: prevent any double-submission ─────────────────────────────
+  const btn = document.getElementById('lv-submit-btn');
+  if (btn && btn.dataset.submitting === '1') return;
+  if (btn) { btn.dataset.submitting = '1'; btn.disabled = true; btn.textContent = 'Submitting...'; }
+
   const session = Auth.getSession();
   const type  = document.getElementById('lv-type').value;
   const from  = document.getElementById('lv-from').value;
   const to    = document.getElementById('lv-to').value;
   const notes = document.getElementById('lv-notes').value.trim();
 
-  if (!from || !to) { Common.toast('Select both dates', 'error'); return; }
-  if (new Date(to) < new Date(from)) { Common.toast('To date must be after From date', 'error'); return; }
-
-  const btn = document.getElementById('lv-submit-btn');
-  btn.disabled = true;
-  btn.textContent = 'Submitting...';
+  if (!from || !to) {
+    Common.toast('Select both dates', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; btn.dataset.submitting = ''; }
+    return;
+  }
+  if (new Date(to) < new Date(from)) {
+    Common.toast('To date must be after From date', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Leave Request'; btn.dataset.submitting = ''; }
+    return;
+  }
 
   try {
     const payload = {
@@ -1335,6 +1344,7 @@ async function submitLeaveFromBranch() {
       }
       btn.textContent = '✓ Submitted';
       btn.style.background = '';
+      btn.dataset.submitting = '';
       Common.toast('Leave request submitted!', 'success');
     } else if (res === null) {
       document.getElementById('lv-success-alert').classList.remove('hidden');
@@ -1345,6 +1355,7 @@ async function submitLeaveFromBranch() {
       btn.disabled = false;
       btn.textContent = 'Submit Leave Request';
       btn.style.background = '';
+      btn.dataset.submitting = '';
     }
   } catch(e) {
     console.error('submitLeave error:', e);
