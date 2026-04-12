@@ -1149,9 +1149,16 @@ async function loadMyLeaveData(session) {
       // Store ALL leaves (full branch) for position conflict check
       _positionLeaves = allLeaves;
 
-      const myLeaves = allLeaves.filter(l =>
-        l.emp_id === session.user_id || l.employee_name === session.full_name
-      );
+      // Deduplicate: same emp + same dates = same request (keep first occurrence)
+      const seenLeave = new Set();
+      const myLeaves  = allLeaves
+        .filter(l => l.emp_id === session.user_id || l.employee_name === session.full_name)
+        .filter(l => {
+          const key = `${l.emp_id||l.employee_name}|${l.from_date||l.from}|${l.to_date||l.to}|${l.leave_type||l.type}`;
+          if (seenLeave.has(key)) return false;
+          seenLeave.add(key);
+          return true;
+        });
       const approved = myLeaves.filter(l => l.status === 'Approved');
       const pending  = myLeaves.filter(l => l.status === 'Pending' || l.status === 'BM Approved');
       const daysTaken= approved.reduce((s,l)=>s+parseInt(l.days||1),0);
