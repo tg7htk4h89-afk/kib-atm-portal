@@ -546,7 +546,8 @@ textarea.form-control{resize:vertical;min-height:80px}
                   <div style="display:flex;gap:8px">
                     <select class="form-control" style="font-size:12px;padding:5px 8px" id="lv-filter-status" onchange="renderLeaveRequests()">
                       <option value="">All Status</option>
-                      <option value="Pending">Pending</option>
+                      <option value="Pending">Pending (awaiting BM)</option>
+                      <option value="BM Approved">BM Approved (awaiting AM)</option>
                       <option value="Approved">Approved</option>
                       <option value="Rejected">Rejected</option>
                     </select>
@@ -997,17 +998,22 @@ const WFM_API = {
 let currentUser = null;
 
 const ROLE_MAP = {
-  // Area Manager — approve leave, report absence, view coverage, area calendar
+  // Branch Manager — sees own-branch leaves, gives FIRST approval (Pending → BM Approved)
+  'branch_manager': {
+    role:'Branch Manager', area:null, color:'#0891b2',
+    permissions:['dashboard','leave','branches']
+  },
+  // Area Manager — gives FINAL approval (BM Approved → Approved), reports absence
   'area_manager': {
     role:'Area Manager', area:null, color:'#16a34a',
     permissions:['dashboard','absence','leave','branches','coverage','audit']
   },
-  // Head of Branches — all areas, approve leave, full WFM visibility
+  // Head of Branches — can approve at any stage, full WFM visibility
   'head_branches': {
     role:'Head of Branches', area:null, color:'#1D6FBB',
     permissions:['dashboard','absence','leave','replacement','employees','branches','coverage','fairness','audit']
   },
-  // ATM Manager — redirected here if they access wfm.html (read-only)
+  // ATM Manager — read-only dashboard + branches
   'manager':     { role:'ATM Manager',    area:null, color:'#6C3483', permissions:['dashboard','branches'] },
   'atm_manager': { role:'ATM Manager',    area:null, color:'#6C3483', permissions:['dashboard','branches'] },
   'branch_user': { role:'Branch Staff',   area:null, color:'#94a3b8', permissions:['leave'] },
@@ -1027,11 +1033,12 @@ function loadATMSession() {
       username:    sess.user_id || sess.username || 'user',
       full_name:   sess.full_name || sess.username || 'User',
       role:        mapped.role,
-      area:        sess.area || mapped.area || null,  // FIX: read area from session
+      area:        sess.area || mapped.area || null,
       color:       mapped.color,
       permissions: mapped.permissions,
       atm_role:    sess.role,
       branch_id:   sess.branch_id || null,
+      branch_name: sess.branch_name || null,
     };
     return true;
   } catch(e) { console.error('Session error:', e); return false; }
@@ -1215,7 +1222,7 @@ function renderDashboard(){
   const myAbsences = currentUser.area ? ABSENCE_LOG.filter(a=>myBranches.find(b=>b.id===a.branch)) : ABSENCE_LOG;
   const myLeaves   = currentUser.area ? LEAVE_REQUESTS.filter(l=>myBranches.find(b=>b.id===l.branch)) : LEAVE_REQUESTS;
   const openAbsences=myAbsences.filter(a=>a.status==='Open').length;
-  const pendingLeaves=myLeaves.filter(l=>l.status==='Pending').length;
+  const pendingLeaves=myLeaves.filter(l=>l.status==='Pending'||l.status==='BM Approved').length;
   const availableEmps=myEmps.filter(e=>e.status==='Available').length;
   const totalEmps=myEmps.length;
   const conflicts=detectAllConflicts().length;
@@ -1603,7 +1610,7 @@ function _getIneligibilityReason(emp, branch, date) {
   // R3: Has an approved leave request covering this date
   const onLeave = LEAVE_REQUESTS.some(l =>
     l.empId === emp.id &&
-    l.status === 'Approved' &&
+    (l.status === 'Approved' || l.status === 'BM Approved') &&
     date >= l.from &&
     date <= l.to
   );
@@ -2325,24 +2332,103 @@ function renderLeaveRequests(){
   const tbody=document.getElementById('leave-table-body');
   if(!tbody) return;
   const filterStatus=document.getElementById('lv-filter-status')?.value||'';
-  let filtered=LEAVE_REQUESTS;
-  if(filterStatus) filtered=filtered.filter(l=>l.status===filterStatus);
-  if(currentUser.area) filtered=filtered.filter(l=>BRANCHES.find(b=>b.id===l.branch&&b.area===currentUser.area));
+  const role = currentUser.role;
+  const isBM  = role==='Branch Manager';
+  const isAM  = role==='Area Manager';
+  const isHoB = role==='Head of Branches';
 
-  tbody.innerHTML=filtered.map(l=>`<tr>
-    <td><div style="font-weight:600;font-size:12px">${l.employee}</div><div style="font-size:10px;color:var(--text-muted)">${l.position}</div></td>
-    <td style="font-size:11px">${BRANCHES.find(b=>b.id===l.branch)?.name||l.branch}</td>
+  // Scope: BM sees own branch only; AM sees own area; HoB sees all
+  let filtered = LEAVE_REQUESTS;
+  if(isBM && currentUser.branch_id){
+    filtered = filtered.filter(l=>l.branch===currentUser.branch_id);
+  } else if(currentUser.area){
+    filtered = filtered.filter(l=>BRANCHES.find(b=>b.id===l.branch&&b.area===currentUser.area));
+  }
+  if(filterStatus) filtered=filtered.filter(l=>l.status===filterStatus);
+
+  // Status badge styling
+  function statusBadge(s){
+    if(s==='Approved')    return 'badge-green';
+    if(s==='BM Approved') return 'badge-blue';
+    if(s==='Pending')     return 'badge-amber';
+    if(s==='Rejected')    return 'badge-red';
+    return 'badge-grey';
+  }
+
+  // Action buttons per role + current status
+  function actionBtns(l){
+    // BM: can first-approve or reject Pending leaves for their branch
+    if(isBM && l.status==='Pending'){
+      return `<button class="btn btn-sm btn-success" onclick="bmApproveLeave('${l.id}')">✓ BM Approve</button>
+              <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>`;
+    }
+    // AM: can final-approve BM-approved leaves, or reject at any pre-final stage
+    if(isAM && l.status==='BM Approved'){
+      return `<button class="btn btn-sm btn-success" onclick="approveLeave('${l.id}')">✓ Final Approve</button>
+              <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>`;
+    }
+    // AM can also reject Pending directly (escalation skip)
+    if(isAM && l.status==='Pending'){
+      return `<button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>
+              <span style="font-size:10px;color:var(--text-muted);margin-left:4px">Awaiting BM</span>`;
+    }
+    // HoB: full control at any stage
+    if(isHoB && (l.status==='Pending'||l.status==='BM Approved')){
+      return `<button class="btn btn-sm btn-success" onclick="approveLeave('${l.id}')">✓ Approve</button>
+              <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>`;
+    }
+    return '—';
+  }
+
+  tbody.innerHTML = filtered.length ? filtered.map(l=>`<tr>
+    <td>
+      <div style="font-weight:600;font-size:12px">${l.employee}</div>
+      <div style="font-size:10px;color:var(--text-muted)">${l.position}</div>
+    </td>
+    <td style="font-size:11px">${BRANCHES.find(b=>b.id===l.branch)?.name||l.branch||'—'}</td>
     <td><span class="badge badge-blue">${l.type}</span></td>
     <td class="mono" style="font-size:11px">${l.from}</td>
     <td class="mono" style="font-size:11px">${l.to}</td>
     <td style="font-weight:700">${l.days}d</td>
-    <td><span class="badge ${l.status==='Approved'?'badge-green':l.status==='Rejected'?'badge-red':l.status==='Pending'?'badge-amber':'badge-grey'}">${l.status}</span></td>
     <td>
-      ${l.status==='Pending'&&(currentUser.role==='Head of Branches'||currentUser.role==='Area Manager'||currentUser.role==='Admin / Superuser')?
-        `<button class="btn btn-sm btn-success" onclick="approveLeave('${l.id}')">✓ Approve</button>
-         <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rejectLeave('${l.id}')">✗ Reject</button>`:'—'}
+      <span class="badge ${statusBadge(l.status)}">${l.status}</span>
+      ${l.bm_approved_by?`<div style="font-size:9px;color:var(--text-muted);margin-top:2px">BM: ${l.bm_approved_by}</div>`:''}
+      ${l.approved_by&&l.status==='Approved'?`<div style="font-size:9px;color:var(--text-muted);margin-top:2px">AM: ${l.approved_by}</div>`:''}
     </td>
-  </tr>`).join('');
+    <td style="white-space:nowrap">${actionBtns(l)}</td>
+  </tr>`).join('')
+  : `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No leave requests found</td></tr>`;
+}
+
+// ── Branch Manager first-approval (Pending → BM Approved) ───────────────────
+async function bmApproveLeave(id){
+  const lv = LEAVE_REQUESTS.find(l=>l.id===id);
+  if(!lv) return;
+
+  lv.status         = 'BM Approved';
+  lv.bm_approved_by = currentUser.full_name || currentUser.username;
+  lv.bm_approved_at = new Date().toISOString().slice(0,16).replace('T',' ');
+
+  addAuditEntry('LeaveBMApproved', `${lv.id} — ${lv.employee} ${lv.type} | BM: ${lv.bm_approved_by}`);
+
+  const filterEl = document.getElementById('lv-filter-status');
+  if(filterEl) filterEl.value = 'BM Approved';
+  renderLeaveRequests();
+  renderDashboard();
+  toast('✅ BM approval recorded — sent to Area Manager for final approval', 'success');
+
+  if(CONFIG.USE_API){
+    try{
+      const res = await WFM_API.post('approve-leave',{
+        leave_id:        lv.id,
+        action:          'BM Approved',
+        approved_by:     lv.bm_approved_by,
+        approved_at:     lv.bm_approved_at,
+      });
+      if(res && res.success) toast('✅ BM approval saved to Sheets','success');
+      else toast('⚠️ BM approval saved locally — Sheets sync failed','warning');
+    } catch(e){ console.warn('bm-approve API error:',e); }
+  }
 }
 
 async function approveLeave(id){
