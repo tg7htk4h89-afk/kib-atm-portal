@@ -85,6 +85,7 @@ const CONFIG = {
 
   ROLE_HOME: {
     branch_user:   'branch.html',
+    branch_manager:'wfm.html',      // ← Branch Managers go to WFM portal
     manager:       'manager.html',
     atm_manager:   'manager.html',
     area_manager:  'wfm.html',
@@ -99,7 +100,7 @@ const CONFIG = {
     'vendor.html':         ['vendor', 'vendor_user', 'manager', 'atm_manager'],
     'reports.html':        ['manager', 'atm_manager'],
     'machine-detail.html': ['manager', 'atm_manager'],
-    'wfm.html':            ['area_manager', 'head_branches', 'manager', 'atm_manager'],
+    'wfm.html':            ['branch_manager', 'area_manager', 'head_branches', 'manager', 'atm_manager'],
   },
 };
 
