@@ -1105,6 +1105,23 @@ async function loadLeaveSubmitPage() {
   loadMyLeaveData(session);
 }
 
+// ── Count working days between two YYYY-MM-DD strings (excl. Fri & Sat) ──────
+// KIB weekend = Friday (5) + Saturday (6)
+function countWorkingDays(fromStr, toStr) {
+  if (!fromStr || !toStr) return 0;
+  const start = new Date(fromStr);
+  const end   = new Date(toStr);
+  if (end < start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay(); // 0=Sun … 5=Fri, 6=Sat
+    if (dow !== 5 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(count, 1); // at least 1
+}
+
 function calcLeaveDays() {
   const from = document.getElementById('lv-from')?.value;
   const to   = document.getElementById('lv-to')?.value;
@@ -1113,7 +1130,7 @@ function calcLeaveDays() {
     checkPositionConflict(from, to);
   }
   if (!from || !to) return;
-  const days = Math.max(0, Math.ceil((new Date(to) - new Date(from)) / (1000*60*60*24)) + 1);
+  const days = countWorkingDays(from, to);
   const disp = document.getElementById('lv-days-display');
   const num  = document.getElementById('lv-days-num');
   if (disp && num) { num.textContent = days; disp.style.display = 'block'; }
@@ -1273,7 +1290,7 @@ async function submitLeaveFromBranch() {
       leave_type:    type,
       from_date:     from,
       to_date:       to,
-      days:          Math.max(1, Math.ceil((new Date(to)-new Date(from))/(1000*60*60*24))+1),
+      days:          countWorkingDays(from, to),
       notes:         notes,
       submitted_by:  session.username  || '',
     };
