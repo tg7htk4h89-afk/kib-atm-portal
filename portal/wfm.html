@@ -3793,21 +3793,32 @@ async function loadRealDashboard(){
       console.log('✅ Leaves:', LEAVE_REQUESTS.length);
     }
     if(res.open_absences && res.open_absences.length > 0){
-      ABSENCE_LOG = res.open_absences.map(a => ({
-        id:          a.absence_id,
-        employee:    a.employee_name,
-        empId:       a.emp_id,
-        branch:      a.branch_id,
-        branchName:  a.branch_name,
-        position:    a.position,
-        type:        a.absence_type,
-        start:       a.start_date,
-        returnDate:  a.return_date || '',
-        status:      a.status,
-        replacement: a.replacement_name || 'Pending',
-        notes:       a.notes || ''
-      }));
-      console.log('✅ Absences:', ABSENCE_LOG.length);
+      // Deduplicate by absence_id — keeps the latest occurrence only
+      const seen = new Set();
+      ABSENCE_LOG = res.open_absences
+        .filter(a => {
+          if(!a.absence_id || seen.has(a.absence_id)) return false;
+          seen.add(a.absence_id);
+          return true;
+        })
+        .map(a => ({
+          id:          a.absence_id,
+          employee:    a.employee_name,
+          empId:       a.emp_id,
+          branch:      a.branch_id,
+          branchName:  a.branch_name,
+          position:    a.position,
+          type:        a.absence_type,
+          start:       a.start_date,
+          returnDate:  a.return_date || '',
+          status:      a.status,
+          replacement: a.replacement_name || 'Pending',
+          notes:       a.notes || ''
+        }));
+      console.log('✅ Absences (deduped):', ABSENCE_LOG.length);
+    } else {
+      ABSENCE_LOG = [];
+      console.log('✅ No open absences from API');
     }
   } else {
     console.warn('⚠️ wfm-dashboard API failed');
@@ -3882,20 +3893,10 @@ async function submitAbsence(){
           : '✅ Absence reported — '+absRes.absence_id,
           absRes.conflict_warning?'warning':'success');
 
-        // Also update local state (once — no _origSubmitAbsence call)
+        // Update local employee status immediately (UI feedback)
+        // Do NOT unshift to ABSENCE_LOG — loadRealDashboard() will replace it from API
         const absId = absRes.absence_id || 'ABS-'+Date.now();
-        if(emp){
-          ABSENCE_LOG.unshift({
-            id:absId, employee:emp.name, empId:emp.id,
-            branch:branchId, branchName:branch?.name||'',
-            position:emp.position, type:absType, start,
-            returnDate:document.getElementById('abs-return').value||'',
-            status:'Open', replacement:'Pending',
-            notes:document.getElementById('abs-notes').value||'',
-            reportedBy:currentUser.username||currentUser.full_name||'',
-          });
-          emp.status='Absent';
-        }
+        if(emp) emp.status = 'Absent';
         addAuditEntry('AbsenceReported',`${emp?.name||empId} | ${branch?.name||branchId} | ${absType}`);
 
         // Cross-area request if applicable
